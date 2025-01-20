@@ -38,10 +38,6 @@ const program = new Command()
   .option('-p, --gpt4', 'use GPT-4o for enhanced responses')
   .option('-h, --help', 'display help')
 
-const doCommit = async (message: string | CommitMessage): Promise<void> => {
-  await gitService.commit(message)
-}
-
 const editMessage = async (message: string): Promise<string> => {
   const editor = process.env.EDITOR || 'vim'
   const tempFile = '/tmp/commit-message.txt'
@@ -87,7 +83,7 @@ const handleAction = async (
   switch (action) {
     case 'accept':
       logger.info('✨ Committing changes...')
-      await doCommit(message)
+      await gitService.commit(message)
       logger.info('✅ Changes committed successfully!')
       break
     case 'edit':
@@ -98,7 +94,7 @@ const handleAction = async (
 
       if (editedMessage) {
         logger.info('✨ Committing changes...')
-        await doCommit(editedMessage)
+        await gitService.commit(editedMessage)
         logger.info('✅ Changes committed successfully!')
       } else {
         logger.error('❌ Commit cancelled - empty message')

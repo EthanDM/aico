@@ -1,8 +1,17 @@
 import OpenAI from 'openai'
 import { Config, ProcessedDiff, CommitMessage } from '../types'
 import { createLogger } from '../utils/logger'
+import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
 type OpenAIConfig = Config['openai']
+
+const COMMIT_MESSAGE_SYSTEM_CONTENT = `You are a helpful assistant that generates clear and concise git commit messages.
+Follow the conventional commits format: <type>(<scope>): <description>
+Types: feat|fix|docs|style|refactor|test|chore
+Keep the first line under 72 characters.
+Use bullet points for the body if needed.
+DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.
+ONLY SEND ONE COMMIT MESSAGE.`
 
 interface OpenAIService {
   generateCommitMessage: (diff: ProcessedDiff) => Promise<CommitMessage>
@@ -99,18 +108,14 @@ export const createOpenAIService = (
     diff: ProcessedDiff
   ): Promise<CommitMessage> => {
     const prompt = buildPrompt(diff)
-    const messages = [
+
+    const messages: ChatCompletionMessageParam[] = [
       {
-        role: 'system' as const,
-        content: `You are a helpful assistant that generates clear and concise git commit messages.
-          Follow the conventional commits format: <type>(<scope>): <description>
-          Types: feat|fix|docs|style|refactor|test|chore
-          Keep the first line under 72 characters.
-          Use bullet points for the body if needed.
-          DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.`,
+        role: 'system',
+        content: COMMIT_MESSAGE_SYSTEM_CONTENT,
       },
       {
-        role: 'user' as const,
+        role: 'user',
         content: prompt,
       },
     ]
