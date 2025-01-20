@@ -47,13 +47,18 @@ function handle_api_error() {
 # Function to format commit message parts
 function call_openai_api() {
     local model=${1:-${AI_CONFIG[DEFAULT_MODEL]}}
-    local changed_files=$2
     local diff_content=$3
 
     validate_api_prerequisites || return 1
 
     # Get git status for more context
     local git_status=$(command git status --short)
+
+    # Branch Name
+    local branch_name=$(command git rev-parse --abbrev-ref HEAD)
+
+    # Last 5 commits
+    local last_5_commits=$(command git log -n 5 --pretty=format:"%h - %s")
 
     # Prepare enhanced prompt
     local prompt="Generate a git commit message following these guidelines:
@@ -63,12 +68,18 @@ function call_openai_api() {
     4. Use imperative mood (e.g., 'Add', 'Fix', 'Update').
     5. DO NOT INCLUDE BACKTICKS, CODE BLOCKS, OR ANY OTHER MARKUP.
     6. Use \"\\n\" to explicitly indicate line breaks in the content response. DO NOT USE ANY OTHER LINE BREAK MARKUP.
+    7. DOUBLE CHECK ALL RETURNS ARE ESCAPED FOR VALID JSON.
+    8. DO NOT INCLUDE ANY OTHER MARKUP OR CODE BLOCKS. JUST THE COMMIT MESSAGE.
+    9. DO NOT USE ANY OTHER LINE BREAK MARKUP. JUST USE \\n.
 
     Git Status:
     $git_status
 
-    Files Changed:
-    $changed_files
+    Branch Name:
+    $branch_name
+
+    Last 5 Commits:
+    $last_5_commits
 
     Changes:
     $diff_content"

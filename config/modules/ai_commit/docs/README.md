@@ -72,7 +72,6 @@ commit              # Interactive commit with GPT-4o-mini
 # Options
 commit -d           # Debug mode
 commit -l           # Log API responses
-commit -s           # Auto-stage changes
 commit -p           # Use GPT-4o for better analysis
 commit -h           # Show help
 
@@ -80,7 +79,6 @@ commit -h           # Show help
 A                   # Accept and commit
 E                   # Edit message
 R                   # Regenerate message
-S                   # Stage all & commit
 V                   # View full diff
 D                   # Toggle debug output
 C                   # Cancel
