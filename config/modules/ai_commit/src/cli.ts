@@ -42,16 +42,13 @@ const program = new Command()
   .option('-h, --help', 'display help')
 
 const doCommit = async (message: string | CommitMessage): Promise<void> => {
-  const { title, body, footer } =
-    typeof message === 'string'
-      ? { title: message, body: undefined, footer: undefined }
-      : message
+  const { title, body } =
+    typeof message === 'string' ? { title: message, body: undefined } : message
 
   const fullMessage = [
     title,
     '', // Empty line after title
     body,
-    footer ? '\n' + footer : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -110,9 +107,7 @@ const handleAction = async (
     case 'edit':
       logger.info('✏️  Opening editor...')
       const editedMessage = await editMessage(
-        [message.title, '', message.body, message.footer]
-          .filter(Boolean)
-          .join('\n')
+        [message.title, '', message.body].filter(Boolean).join('\n')
       )
 
       if (editedMessage) {
@@ -189,9 +184,6 @@ const main = async (): Promise<void> => {
     console.log(chalk.green(message.title))
     if (message.body) {
       console.log('\n' + message.body)
-    }
-    if (message.footer) {
-      console.log('\n' + message.footer)
     }
 
     // Interactive prompt

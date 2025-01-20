@@ -50,7 +50,6 @@ export interface ProcessedDiff {
 export interface CommitMessage {
   title: string
   body?: string
-  footer?: string
 }
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'

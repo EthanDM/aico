@@ -30,34 +30,37 @@ const parseCommitMessage = (content: string): CommitMessage => {
   const lines = content.trim().split('\n')
   const title = lines[0].trim()
 
-  let body: string | undefined
-  let footer: string | undefined
-
-  // Find the body (everything between title and footer)
+  // Find the body (everything after the title and first empty line)
   const bodyLines: string[] = []
-  let footerStartIndex = -1
+  let bodyStarted = false
 
-  for (let i = 2; i < lines.length; i++) {
+  for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim()
-    if (line.startsWith('BREAKING CHANGE:') || /^[A-Z-]+: /.test(line)) {
-      footerStartIndex = i
-      break
+
+    // Skip empty lines until we find content
+    if (!bodyStarted && !line) {
+      continue
     }
+
+    // Start collecting body content
     if (line) {
+      bodyStarted = true
       bodyLines.push(line)
+    } else if (bodyStarted) {
+      // Keep empty lines that are between body paragraphs
+      bodyLines.push('')
     }
   }
 
-  if (bodyLines.length > 0) {
-    body = bodyLines.join('\n')
+  // Remove trailing empty lines from body
+  while (bodyLines.length > 0 && !bodyLines[bodyLines.length - 1]) {
+    bodyLines.pop()
   }
 
-  // Get the footer if it exists
-  if (footerStartIndex !== -1) {
-    footer = lines.slice(footerStartIndex).join('\n')
+  return {
+    title,
+    body: bodyLines.length > 0 ? bodyLines.join('\n') : undefined,
   }
-
-  return { title, body, footer }
 }
 
 export const createOpenAIService = (
