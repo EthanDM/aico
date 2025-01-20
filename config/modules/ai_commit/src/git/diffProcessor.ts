@@ -67,10 +67,48 @@ const extractDiffDetails = (rawDiff: string, files: string[]): GitDiff => {
   }
 }
 
-const generateSummary = (
-  diff: GitDiff,
-  stats: ProcessedDiff['stats']
-): string => {
+const TOKEN_LIMIT = 20000
+
+const processDiff = async (
+  rawDiff: string,
+  changedFiles: string[]
+): Promise<ProcessedDiff> => {
+  const filteredFiles = filterNoisyFiles(changedFiles)
+  const shouldSummarize = rawDiff.length > TOKEN_LIMIT
+
+  let details: GitDiff
+  let summary: string
+
+  if (shouldSummarize) {
+    // Process and summarize the diff if it's too long
+    details = extractDiffDetails(rawDiff, filteredFiles)
+    summary = generateSummary(details)
+  } else {
+    // Keep the raw diff if it's under the limit
+    details = {
+      fileOperations: [],
+      functionChanges: [],
+      dependencyChanges: [],
+      additions: [],
+      deletions: [],
+      rawDiff: rawDiff,
+    }
+    summary = rawDiff
+  }
+
+  const stats = {
+    originalLength: rawDiff.length,
+    processedLength: summary.length,
+    filesChanged: changedFiles.length,
+    additions: shouldSummarize ? details.additions.length : 0,
+    deletions: shouldSummarize ? details.deletions.length : 0,
+    wasSummarized: shouldSummarize,
+  }
+
+  return { summary, details, stats }
+}
+
+const generateSummary = (diff: GitDiff): string => {
   const sections: string[] = []
 
   if (diff.fileOperations.length > 0) {
@@ -98,26 +136,6 @@ const generateSummary = (
   }
 
   return sections.join('\n\n')
-}
-
-const processDiff = async (
-  rawDiff: string,
-  changedFiles: string[]
-): Promise<ProcessedDiff> => {
-  const filteredFiles = filterNoisyFiles(changedFiles)
-  const details = extractDiffDetails(rawDiff, filteredFiles)
-
-  const stats = {
-    originalLength: rawDiff.length,
-    processedLength: details.rawDiff.length,
-    filesChanged: changedFiles.length,
-    additions: details.additions.length,
-    deletions: details.deletions.length,
-  }
-
-  const summary = generateSummary(details, stats)
-
-  return { summary, details, stats }
 }
 
 export const createDiffProcessor = (): DiffProcessor => {

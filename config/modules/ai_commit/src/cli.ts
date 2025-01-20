@@ -180,6 +180,9 @@ const main = async (): Promise<void> => {
 
     // Display results
     console.log('\n📝 Changes to be committed:')
+    if (diff.stats.wasSummarized) {
+      console.log(chalk.blue('(Summarized due to size)'))
+    }
     console.log(chalk.blue(diff.summary))
 
     console.log('\n💡 Proposed commit message:')

@@ -43,6 +43,7 @@ export interface ProcessedDiff {
     filesChanged: number
     additions: number
     deletions: number
+    wasSummarized: boolean
   }
 }
 

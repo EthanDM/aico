@@ -8,15 +8,18 @@ interface OpenAIService {
 }
 
 const buildPrompt = (diff: ProcessedDiff): string => {
-  const parts = [
-    'Generate a commit message for the following changes:\n',
-    diff.summary,
-  ]
+  const parts = ['Generate a commit message for the following changes:']
 
-  if (diff.stats.filesChanged > 0) {
+  if (diff.stats.wasSummarized) {
+    // For summarized diffs, include the summary and stats
+    parts.push(diff.summary)
     parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
     parts.push(`Additions: ${diff.stats.additions}`)
     parts.push(`Deletions: ${diff.stats.deletions}`)
+  } else {
+    // For raw diffs, just include the diff directly
+    parts.push('\nRaw diff:')
+    parts.push(diff.summary)
   }
 
   return parts.join('\n')
