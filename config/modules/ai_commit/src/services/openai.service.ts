@@ -141,6 +141,8 @@ export const createOpenAIService = (
       presence_penalty: config.presencePenalty,
     })
 
+    logger.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
+
     if (debugConfig.enabled) {
       logger.debug('🔍 API Response:')
       logger.debug(JSON.stringify(response, null, 2))

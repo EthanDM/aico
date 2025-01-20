@@ -61,14 +61,14 @@ const extractDiffDetails = (rawDiff: string, files: string[]): GitDiff => {
   }
 }
 
-const TOKEN_LIMIT = 20000
+const CHARACTER_LIMIT = 20000
 
 export const processDiff = async (
   rawDiff: string,
   changedFiles: string[]
 ): Promise<ProcessedDiff> => {
   const filteredFiles = filterNoisyFiles(changedFiles)
-  const shouldSummarize = rawDiff.length > TOKEN_LIMIT
+  const shouldSummarize = rawDiff.length > CHARACTER_LIMIT
 
   let details: GitDiff
   let summary: string

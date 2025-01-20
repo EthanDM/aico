@@ -169,6 +169,13 @@ export const createWorkflowService = (
     // Log detailed diff information in debug mode
     logDebugDiff(stagedDiff)
 
+    logger.info('\n📊 Git Stats:')
+    logger.info(`Files changed: ${stagedDiff.stats.filesChanged}`)
+    logger.info(`Additions: ${stagedDiff.stats.additions}`)
+    logger.info(`Deletions: ${stagedDiff.stats.deletions}`)
+    logger.info(`Original length: ${stagedDiff.stats.originalLength}`)
+    logger.info(`Processed length: ${stagedDiff.stats.processedLength}`)
+
     logger.info('💭 Generating commit message...')
     const message = await openai.generateCommitMessage(stagedDiff)
 
