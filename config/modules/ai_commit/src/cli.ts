@@ -163,7 +163,7 @@ const main = async (): Promise<void> => {
 
     const logger = createLogger(config.debug)
     const diffProcessor = createDiffProcessor()
-    const openai = createOpenAIService(config.openai)
+    const openai = createOpenAIService(config.openai, config.debug)
 
     // Process git changes
     logger.info('🔍 Analyzing changes...')

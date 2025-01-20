@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { Config, ProcessedDiff, CommitMessage } from '../types'
+import { createLogger } from '../utils/logger'
 
 type OpenAIConfig = Config['openai']
 
@@ -59,37 +60,58 @@ const parseCommitMessage = (content: string): CommitMessage => {
   return { title, body, footer }
 }
 
-export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
+export const createOpenAIService = (
+  config: OpenAIConfig,
+  debugConfig: Config['debug']
+): OpenAIService => {
   const client = new OpenAI({ apiKey: config.apiKey })
+  const logger = createLogger(debugConfig)
 
   const generateCommitMessage = async (
     diff: ProcessedDiff
   ): Promise<CommitMessage> => {
     const prompt = buildPrompt(diff)
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `You are a helpful assistant that generates clear and concise git commit messages.
+          Follow the conventional commits format: <type>(<scope>): <description>
+          Types: feat|fix|docs|style|refactor|test|chore
+          Keep the first line under 72 characters.
+          Use bullet points for the body if needed.
+          DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.`,
+      },
+      {
+        role: 'user' as const,
+        content: prompt,
+      },
+    ]
+
+    if (debugConfig.enabled) {
+      logger.debug('🔍 API Request:')
+      logger.debug(`Model: ${config.model}`)
+      logger.debug(`Max Tokens: ${config.maxTokens}`)
+      logger.debug(`Temperature: ${config.temperature}`)
+      logger.debug('Messages:')
+      messages.forEach((msg) => {
+        logger.debug(`${msg.role}: ${msg.content}`)
+      })
+    }
 
     const response = await client.chat.completions.create({
       model: config.model,
-      messages: [
-        {
-          role: 'system',
-          content: `You are a helpful assistant that generates clear and concise git commit messages.
-            Follow the conventional commits format: <type>(<scope>): <description>
-            Types: feat|fix|docs|style|refactor|test|chore
-            Keep the first line under 72 characters.
-            Use bullet points for the body if needed.
-            DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.`,
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
+      messages,
       max_tokens: config.maxTokens,
       temperature: config.temperature,
       top_p: config.topP,
       frequency_penalty: config.frequencyPenalty,
       presence_penalty: config.presencePenalty,
     })
+
+    if (debugConfig.enabled) {
+      logger.debug('🔍 API Response:')
+      logger.debug(JSON.stringify(response, null, 2))
+    }
 
     const content = response.choices[0]?.message?.content
     if (!content) {
