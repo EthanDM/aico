@@ -30,8 +30,11 @@ AI_CONFIG=(
 # Commit Message Configuration
 typeset -A COMMIT_CONFIG
 COMMIT_CONFIG=(
-    [MAX_TITLE_LENGTH]=72
-    [MAX_BODY_LENGTH]=500
+    [MAX_TITLE_LENGTH]=72      # Maximum length of the subject line
+    [MAX_BODY_LENGTH]=500      # Maximum length of the body
+    [WRAP_BODY]=72             # Character limit for body line wrapping
+    [INCLUDE_BODY]=true        # Whether to include body when changes are significant
+    [INCLUDE_FOOTER]=true      # Whether to include footer for breaking changes/issues
 )
 
 # Debug Configuration
