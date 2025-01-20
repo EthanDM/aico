@@ -1,47 +1,9 @@
-import { Command } from 'commander'
+#!/usr/bin/env node
 import chalk from 'chalk'
 import { createOpenAIService } from './services/openai.service'
-import { Config, ConfigSchema } from './types'
-import { createLogger } from './utils/logger'
 import { gitService } from './services/git.service'
 import { uiService } from './services/ui.service'
-
-/**
- * The default configuration for the CLI.
- */
-const defaultConfig: Config = {
-  openai: {
-    apiKey: process.env.OPENAI_KEY || '',
-    model: 'gpt-4o-mini',
-    maxTokens: 300,
-    temperature: 0.5,
-    topP: 1,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
-  },
-  commit: {
-    maxTitleLength: 72,
-    maxBodyLength: 500,
-    wrapBody: 72,
-    includeBody: true,
-    includeFooter: true,
-  },
-  debug: {
-    enabled: false,
-    logLevel: 'INFO',
-  },
-}
-
-/**
- * The program instance for the CLI.
- */
-const program = new Command()
-  .name('ai-commit')
-  .description('AI-powered git commit message generator')
-  .version('1.0.0')
-  .option('-d, --debug', 'enable debug mode')
-  .option('-p, --gpt4', 'use GPT-4o for enhanced responses')
-  .option('-h, --help', 'display help')
+import { programService } from './services/program.service'
 
 /**
  * Main function to run the CLI.
@@ -49,29 +11,8 @@ const program = new Command()
  * @returns A promise that resolves when the CLI is finished.
  */
 const main = async (): Promise<void> => {
-  program.parse()
-  const options = program.opts()
-
   try {
-    // Validate environment
-    if (!process.env.OPENAI_KEY) {
-      throw new Error('OPENAI_KEY environment variable is not set')
-    }
-
-    // Initialize configuration
-    const config = ConfigSchema.parse({
-      ...defaultConfig,
-      debug: {
-        ...defaultConfig.debug,
-        enabled: options.debug,
-      },
-      openai: {
-        ...defaultConfig.openai,
-        model: options.gpt4 ? 'gpt-4o' : 'gpt-4o-mini',
-      },
-    })
-
-    const logger = createLogger(config.debug)
+    const { config, logger } = await programService.initialize()
     const openai = createOpenAIService(config.openai, config.debug)
 
     // Process git changes
