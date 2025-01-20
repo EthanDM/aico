@@ -40,6 +40,7 @@ export const createOpenAIService = (
   const buildPrompt = (diff: ProcessedDiff): string => {
     const parts = ['Generate a commit message for the following changes:']
 
+    // TOOD: add branch name, recent commits, etc.
     if (diff.stats.wasSummarized) {
       // For summarized diffs, include the summary and stats
       parts.push(diff.summary)

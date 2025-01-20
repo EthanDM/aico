@@ -11,6 +11,7 @@ interface GitService {
   getStagedChanges(): Promise<ProcessedDiff>
   getAllChanges(): Promise<ProcessedDiff>
   getStatus(): Promise<GitStatus>
+  getShortStatus(): Promise<string>
   commit(message: CommitMessage | string): Promise<void>
   hasChanges(): Promise<boolean>
   hasStaged(): Promise<boolean>
@@ -154,6 +155,15 @@ const createGitService = (): GitService => {
   }
 
   /**
+   * Gets a short status display of changes.
+   *
+   * @returns The short status display.
+   */
+  const getShortStatus = async (): Promise<string> => {
+    return git.raw(['status', '--short'])
+  }
+
+  /**
    * Returns the GitService instance.
    *
    * @returns The GitService instance.
@@ -162,6 +172,7 @@ const createGitService = (): GitService => {
     getStagedChanges,
     getAllChanges,
     getStatus,
+    getShortStatus,
     commit,
     hasChanges,
     hasStaged,

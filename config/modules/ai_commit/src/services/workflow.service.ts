@@ -76,6 +76,11 @@ export const createWorkflowService = (
     logger.info('   Staged: ' + chalk.green(`${stagedCount} files`))
     logger.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
 
+    // Show status before prompting
+    const status = await gitService.getShortStatus()
+    console.log('\nWorking directory status:')
+    console.log(chalk.blue(status))
+
     const { default: inquirer } = await import('inquirer')
     const { action } = await inquirer.prompt([
       {
@@ -125,6 +130,12 @@ export const createWorkflowService = (
 
     if (!hasStaged) {
       logger.warn('No changes are currently staged for commit')
+
+      // Show status before prompting
+      const status = await gitService.getShortStatus()
+      console.log('\nWorking directory status:')
+      console.log(chalk.blue(status))
+
       const { default: inquirer } = await import('inquirer')
       const { action } = await inquirer.prompt([
         {
