@@ -63,6 +63,13 @@ const parseCommitMessage = (content: string): CommitMessage => {
   }
 }
 
+/**
+ * Creates an OpenAIService instance.
+ *
+ * @param config - The OpenAI configuration.
+ * @param debugConfig - The debug configuration.
+ * @returns An instance of the OpenAIService.
+ */
 export const createOpenAIService = (
   config: OpenAIConfig,
   debugConfig: Config['debug']
@@ -70,6 +77,12 @@ export const createOpenAIService = (
   const client = new OpenAI({ apiKey: config.apiKey })
   const logger = createLogger(debugConfig)
 
+  /**
+   * Generates a commit message for the given diff.
+   *
+   * @param diff - The diff to generate a commit message for.
+   * @returns The commit message.
+   */
   const generateCommitMessage = async (
     diff: ProcessedDiff
   ): Promise<CommitMessage> => {
@@ -124,6 +137,11 @@ export const createOpenAIService = (
     return parseCommitMessage(content)
   }
 
+  /**
+   * Returns the OpenAIService instance.
+   *
+   * @returns The OpenAIService instance.
+   */
   return {
     generateCommitMessage,
   }

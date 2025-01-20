@@ -16,8 +16,6 @@ interface GitService {
   hasStaged(): Promise<boolean>
 }
 
-const TOKEN_LIMIT = 20000
-
 /**
  * Creates a GitService instance.
  *
