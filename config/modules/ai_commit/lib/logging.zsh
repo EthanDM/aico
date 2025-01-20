@@ -61,39 +61,58 @@ function log_api_response() {
     local response=$1
     local debug=${DEBUG_CONFIG[ENABLE_DEBUG]}
     local log_responses=${DEBUG_CONFIG[LOG_API_RESPONSES]}
-    
+
     # Show API responses in debug mode or if specifically enabled
     if [[ "$debug" == "true" || "$log_responses" == "true" ]]; then
         echo "\n${LOG_COLORS[DEBUG]}🔍 API Response Details:${LOG_COLORS[RESET]}" >&2
-        
-        # First try to parse and extract content
+
+        # Clean control characters and escape sequences before processing
+        local cleaned_response=$(echo "$response" | tr -d '\000-\037' | sed 's/\r//g')
+
+        # Extract content safely
         local content
-        if content=$(echo "$response" | jq -r '.choices[0].message.content' 2>/dev/null); then
+        if content=$(echo "$cleaned_response" | jq -r '.choices[0].message.content' 2>/dev/null); then
             if [[ "$content" != "null" && -n "$content" ]]; then
                 echo "${LOG_COLORS[DEBUG]}Generated Content:${LOG_COLORS[RESET]}" >&2
+                # Clean any remaining backticks and language specifiers while preserving line breaks
+                content=$(echo "$content" | sed -E '
+                    s/^```[a-zA-Z]*\n?//
+                    s/```$//
+                    s/^[[:space:]]*//
+                    s/[[:space:]]*$//
+                ')
                 echo "$content" >&2
-                echo "" >&2
+            else
+                echo "${LOG_COLORS[WARN]}⚠️  Could not extract content from response.${LOG_COLORS[RESET]}" >&2
+                return 1
             fi
+        else
+            echo "${LOG_COLORS[WARN]}⚠️  Could not parse response as JSON.${LOG_COLORS[RESET]}" >&2
+            return 1
         fi
 
-        # Show full response with colored JSON if in debug mode
+        # Check for truncation
+        if echo "$cleaned_response" | jq -e '.choices[0].finish_reason == "length"' >/dev/null 2>&1; then
+            echo "${LOG_COLORS[WARN]}⚠️  Response was truncated due to length limits.${LOG_COLORS[RESET]}" >&2
+        fi
+
+        # Full response in debug mode
         if [[ "$debug" == "true" ]]; then
             echo "${LOG_COLORS[DEBUG]}Full Response:${LOG_COLORS[RESET]}" >&2
-            if echo "$response" | jq '.' >/dev/null 2>&1; then
-                echo "$response" | jq -C '.' >&2
-            else
-                log_warn "Response is not valid JSON"
-                echo "${LOG_COLORS[DEBUG]}$response${LOG_COLORS[RESET]}" >&2
-            fi
+            echo "$cleaned_response" | jq -C '.' 2>/dev/null || echo "$cleaned_response" >&2
         fi
-        
-        echo "" >&2  # Add a blank line after response
+
+        echo "" >&2  # Blank line after response
     fi
 
-    # Return the content if it was successfully extracted
+    # Always return the cleaned content, even if logging is disabled
     if [[ -n "$content" && "$content" != "null" ]]; then
-        echo "$content"
-    else
-        return 1
+        # Ensure proper line breaks in commit message format
+        echo "$content" | awk '
+            NR==1 {print; print ""}  # Print first line (title) followed by blank line
+            NR>1 {print}             # Print remaining lines (body)
+        '
+        return 0
     fi
-} 
+    return 1
+}

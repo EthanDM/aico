@@ -20,7 +20,7 @@ LOG_LEVELS=(
 typeset -A AI_CONFIG
 AI_CONFIG=(
     [DEFAULT_MODEL]="gpt-4o-mini"
-    [MAX_TOKENS]=60
+    [MAX_TOKENS]=300
     [TEMPERATURE]=0.5
     [TOP_P]=1
     [FREQUENCY_PENALTY]=0

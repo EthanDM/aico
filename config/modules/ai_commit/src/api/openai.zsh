@@ -45,123 +45,101 @@ function handle_api_error() {
 }
 
 # Function to format commit message parts
-function format_commit_message() {
-    local raw_content=$1
-    local subject=""
-    local body=""
-    local footer=""
-    
-    # Split content into lines
-    local lines=("${(@f)raw_content}")
-    
-    # Get subject (first non-empty line)
-    for line in $lines; do
-        if [[ -n "$line" ]]; then
-            subject="$line"
-            break
-        fi
-    done
-    
-    # Get body and footer
-    local in_body=false
-    local in_footer=false
-    local temp_body=""
-    local temp_footer=""
-    
-    for line in $lines; do
-        # Skip the subject line
-        [[ "$line" == "$subject" ]] && continue
-        
-        # Empty line after subject starts body
-        if [[ -z "$line" && "$in_body" == "false" && -n "$subject" ]]; then
-            in_body=true
-            continue
-        fi
-        
-        # If line starts with "BREAKING CHANGE:" or "Closes" or "Fixes", it's footer
-        if [[ "$line" =~ ^(BREAKING CHANGE:|Closes|Fixes) ]]; then
-            in_footer=true
-            in_body=false
-        fi
-        
-        if [[ "$in_footer" == "true" ]]; then
-            temp_footer+="$line"$'\n'
-        elif [[ "$in_body" == "true" && -n "$line" ]]; then
-            temp_body+="$line"$'\n'
-        fi
-    done
-    
-    # Combine parts with proper spacing
-    local result="$subject"
-    [[ -n "$temp_body" ]] && result+=$'\n\n'"${temp_body%$'\n'}"
-    [[ -n "$temp_footer" ]] && result+=$'\n\n'"${temp_footer%$'\n'}"
-    
-    echo "$result"
-}
-
-# Function to make API request and handle response
 function call_openai_api() {
     local model=${1:-${AI_CONFIG[DEFAULT_MODEL]}}
     local changed_files=$2
     local diff_content=$3
-    
+
     validate_api_prerequisites || return 1
-    
+
     # Get git status for more context
     local git_status=$(command git status --short)
-    
-    # Prepare the prompt
-    local prompt="Generate a git commit message following the Conventional Commits format. Return ONLY the commit message without any markdown or code blocks.
 
-Format Rules:
-- Use the conventional commits format: <type>(<scope>): <description>
-- Keep the first line under 72 characters
-- Add a blank line after the first line if including a body
-- Break body lines at 72 characters
-- Use present tense and imperative mood
-- Reference relevant issue numbers if found in the diff
+    # Prepare enhanced prompt
+    local prompt="Generate a git commit message following these guidelines:
+    1. Use the Conventional Commit format (feat, fix, docs, style, refactor, test, chore).
+    2. Include a summary of the changes under ${COMMIT_CONFIG[MAX_TITLE_LENGTH]} characters.
+    3. Provide additional details in the body, formatted as bullet points if necessary.
+    4. Use imperative mood (e.g., 'Add', 'Fix', 'Update').
+    5. DO NOT INCLUDE BACKTICKS, CODE BLOCKS, OR ANY OTHER MARKUP.
+    6. Use \"\\n\" to explicitly indicate line breaks in the content response.
 
-Changed files:
-$changed_files
+    Git Status:
+    $git_status
 
-Git Status:
-$git_status
+    Files Changed:
+    $changed_files
 
-Changes:
-$diff_content"
+    Changes:
+    $diff_content"
 
-    # Create JSON payload using jq to properly escape special characters
-    local json_payload
-    json_payload=$(jq -n \
+
+    # Sanitize fields for JSON payload
+    local escaped_prompt=$(jq -R <<< "$prompt")
+
+    # Create the JSON payload using jq
+    local json_data=$(jq -n \
         --arg model "$model" \
-        --arg system_content "You are a helpful git commit message generator. Generate clear, concise, and conventional commit messages based on the provided changes." \
-        --arg user_content "$prompt" \
+        --arg content "$prompt" \
+        --argjson temp "${AI_CONFIG[TEMPERATURE]}" \
+        --argjson max_tokens "${AI_CONFIG[MAX_TOKENS]}" \
+        --argjson top_p "${AI_CONFIG[TOP_P]}" \
+        --argjson freq_pen "${AI_CONFIG[FREQUENCY_PENALTY]}" \
+        --argjson pres_pen "${AI_CONFIG[PRESENCE_PENALTY]}" \
         '{
             model: $model,
-            messages: [
-                {role: "system", content: $system_content},
-                {role: "user", content: $user_content}
-            ],
-            temperature: 0.7
+            messages: [{role: "user", content: $content}],
+            temperature: $temp,
+            max_tokens: $max_tokens,
+            top_p: $top_p,
+            frequency_penalty: $freq_pen,
+            presence_penalty: $pres_pen
         }')
 
+    log_info "Generating enhanced commit message using $model..." >&2
+
     # Make the API request with properly escaped JSON
-    local response
-    response=$(curl -s -S -X POST "https://api.openai.com/v1/chat/completions" \
+    local response=$(curl -s https://api.openai.com/v1/chat/completions \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $OPENAI_KEY" \
-        -d "$json_payload")
+        -d "$json_data" 2>/dev/null)
 
-    # Log the response for debugging
-    local commit_message
-    commit_message=$(log_api_response "$response")
-    
-    if [[ $? -eq 0 && -n "$commit_message" ]]; then
-        # Format the commit message
-        format_commit_message "$commit_message"
-        return 0
-    else
-        handle_api_error "$response"
+
+
+    commit_msg=$(echo "$response" | jq -r '.choices[0].message.content')
+
+
+    # Check for curl errors
+    if [ $? -ne 0 ]; then
+        log_error "Failed to connect to the OpenAI API." >&2
         return 1
     fi
-} 
+
+    # Check for API errors
+    if echo "$response" | grep -q '"error":'; then
+        handle_api_error "$response" >&2
+        return 1
+    fi
+
+    # Log the response for debugging
+    log_api_response "$response" >&2
+
+
+
+    # Ensure the content is not empty or null
+    if [[ -z "$commit_msg" || "$commit_msg" == "null" ]]; then
+        log_error "The OpenAI API returned an empty or null commit message." >&2
+        log_debug "Raw API Response:\n$response" >&2
+        return 1
+    fi
+
+
+    # Check if we got a valid commit message back
+    if [[ $? -ne 0 || -z "$commit_msg" ]]; then
+        log_error "Failed to extract a valid commit message from the API response." >&2
+        log_debug "Raw API Response:\n$response" >&2
+        return 1
+    fi
+
+    echo "$commit_msg"
+}
