@@ -10,10 +10,10 @@ import { createWorkflow } from './services/workflow.service'
  */
 const main = async (): Promise<void> => {
   try {
-    const { config, logger } = await programService.initialize()
+    const { config, logger, options } = await programService.initialize()
     const workflow = createWorkflow(config, logger)
 
-    const message = await workflow.generateCommitMessage()
+    const message = await workflow.generateCommitMessage(options.message)
     const result = await workflow.promptForAction(message)
 
     if (result === 'restart') {

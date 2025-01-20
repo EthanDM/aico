@@ -53,3 +53,10 @@ export interface CommitMessage {
 }
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
+
+export interface OpenAIService {
+  generateCommitMessage: (
+    diff: ProcessedDiff,
+    userMessage?: string
+  ) => Promise<CommitMessage>
+}

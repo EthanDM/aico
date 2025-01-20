@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { Config, ProcessedDiff, CommitMessage } from '../types'
+import { Config, ProcessedDiff, CommitMessage, OpenAIService } from '../types'
 import { createLogger } from '../utils/logger'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { gitService } from '../services/git.service'
@@ -13,10 +13,6 @@ Keep the first line under 72 characters.
 Use bullet points for the body if needed.
 DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.
 ONLY SEND ONE COMMIT MESSAGE.`
-
-interface OpenAIService {
-  generateCommitMessage: (diff: ProcessedDiff) => Promise<CommitMessage>
-}
 
 /**
  * Creates an OpenAIService instance.
@@ -36,10 +32,23 @@ export const createOpenAIService = (
    * Builds the prompt for the OpenAI API.
    *
    * @param diff - The diff to generate a commit message for.
+   * @param userMessage - Optional user-provided message for guidance.
    * @returns The prompt for the OpenAI API.
    */
-  const buildPrompt = async (diff: ProcessedDiff): Promise<string> => {
+  const buildPrompt = async (
+    diff: ProcessedDiff,
+    userMessage?: string
+  ): Promise<string> => {
     const parts = ['Generate a commit message for the following changes:']
+
+    // Add user guidance if provided
+    if (userMessage) {
+      parts.push('\nUser suggested message:')
+      parts.push(userMessage)
+      parts.push(
+        '\nConsider the above message as guidance, but ensure the commit message accurately reflects the changes.'
+      )
+    }
 
     // Add branch context
     const branchName = await gitService.getBranchName()
@@ -131,17 +140,23 @@ export const createOpenAIService = (
    * Generates a commit message for the given diff.
    *
    * @param diff - The diff to generate a commit message for.
+   * @param userMessage - Optional user-provided message for guidance.
    * @returns The commit message.
    */
   const generateCommitMessage = async (
-    diff: ProcessedDiff
+    diff: ProcessedDiff,
+    userMessage?: string
   ): Promise<CommitMessage> => {
-    const prompt = await buildPrompt(diff)
+    const prompt = await buildPrompt(diff, userMessage)
 
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content: COMMIT_MESSAGE_SYSTEM_CONTENT,
+        content:
+          COMMIT_MESSAGE_SYSTEM_CONTENT +
+          (userMessage
+            ? '\nA user message has been provided as guidance. Consider it strongly for the commit message, but ensure the message accurately reflects the actual changes.'
+            : ''),
       },
       {
         role: 'user',
@@ -158,6 +173,8 @@ export const createOpenAIService = (
       logger.debug(`system: ${messages[0].content}`)
       // Skip logging the full diff since it's already logged in workflow
       logger.debug('user: <diff content omitted>')
+
+      // logger.debug(`user: ${messages[1].content}`)
     }
 
     const response = await client.chat.completions.create({

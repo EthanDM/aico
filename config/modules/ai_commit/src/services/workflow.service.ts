@@ -6,7 +6,7 @@ import { uiService } from './ui.service'
 import { createLogger } from '../utils/logger'
 
 interface WorkflowService {
-  generateCommitMessage: () => Promise<CommitMessage>
+  generateCommitMessage: (userMessage?: string) => Promise<CommitMessage>
   promptForAction: (
     message: CommitMessage
   ) => Promise<'exit' | 'restart' | void>
@@ -111,11 +111,18 @@ export const createWorkflowService = (
   /**
    * Generates a commit message based on staged changes.
    *
+   * @param userMessage - Optional user-provided message for guidance.
    * @returns The generated commit message.
    * @throws Error if there are no changes to commit.
    */
-  const generateCommitMessage = async (): Promise<CommitMessage> => {
+  const generateCommitMessage = async (
+    userMessage?: string
+  ): Promise<CommitMessage> => {
     logger.info('🔍 Analyzing changes...')
+
+    if (userMessage && config.debug.enabled) {
+      logger.debug(`🔍 User provided message: ${userMessage}`)
+    }
 
     // Check both staged and all changes
     const [hasStaged, hasChanges] = await Promise.all([
@@ -188,7 +195,7 @@ export const createWorkflowService = (
     logger.info(`Processed length: ${stagedDiff.stats.processedLength}`)
 
     logger.info('💭 Generating commit message...')
-    const message = await openai.generateCommitMessage(stagedDiff)
+    const message = await openai.generateCommitMessage(stagedDiff, userMessage)
 
     console.log('\n💡 Proposed commit message:')
     console.log(chalk.green(message.title))
