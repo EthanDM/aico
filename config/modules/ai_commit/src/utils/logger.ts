@@ -15,48 +15,42 @@ const LOG_COLORS = {
   ERROR: chalk.red,
 } as const
 
-export class Logger {
-  private config: Config['debug']
+const LOG_LEVELS = {
+  DEBUG: 0,
+  INFO: 1,
+  WARN: 2,
+  ERROR: 3,
+} as const
 
-  constructor(config: Config['debug']) {
-    this.config = config
-  }
+interface Logger {
+  debug: (message: string) => void
+  info: (message: string) => void
+  warn: (message: string) => void
+  error: (message: string) => void
+}
 
-  debug(message: string): void {
-    this.log('DEBUG', message)
-  }
+const shouldLog = (level: LogLevel, config: Config['debug']): boolean =>
+  config.enabled ||
+  level === 'ERROR' ||
+  LOG_LEVELS[level] >= LOG_LEVELS[config.logLevel]
 
-  info(message: string): void {
-    this.log('INFO', message)
-  }
+const formatMessage = (level: LogLevel, message: string): string => {
+  const icon = LOG_ICONS[level]
+  const colorize = LOG_COLORS[level]
+  return colorize(`${icon} ${message}`)
+}
 
-  warn(message: string): void {
-    this.log('WARN', message)
-  }
-
-  error(message: string): void {
-    this.log('ERROR', message)
-  }
-
-  private log(level: LogLevel, message: string): void {
-    const LOG_LEVELS = {
-      DEBUG: 0,
-      INFO: 1,
-      WARN: 2,
-      ERROR: 3,
+export const createLogger = (config: Config['debug']): Logger => {
+  const log = (level: LogLevel, message: string): void => {
+    if (shouldLog(level, config)) {
+      console.error(formatMessage(level, message))
     }
+  }
 
-    // Only show messages at or above the current log level
-    if (
-      !this.config.enabled &&
-      level !== 'ERROR' &&
-      LOG_LEVELS[level] < LOG_LEVELS[this.config.logLevel]
-    ) {
-      return
-    }
-
-    const icon = LOG_ICONS[level]
-    const colorize = LOG_COLORS[level]
-    console.error(colorize(`${icon} ${message}`))
+  return {
+    debug: (message: string) => log('DEBUG', message),
+    info: (message: string) => log('INFO', message),
+    warn: (message: string) => log('WARN', message),
+    error: (message: string) => log('ERROR', message),
   }
 }

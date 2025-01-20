@@ -24,124 +24,119 @@ const NOISY_FILE_PATTERNS = [
   /\.log$/,
 ]
 
-export class DiffProcessor {
-  private git = simpleGit()
+interface DiffProcessor {
+  getStagedChanges: () => Promise<ProcessedDiff>
+  getAllChanges: () => Promise<ProcessedDiff>
+}
 
-  async getStagedChanges(): Promise<ProcessedDiff> {
-    const status = await this.git.status()
-    const diff = await this.git.diff(['--staged'])
-    return this.processDiff(diff, status.staged)
+const filterNoisyFiles = (files: string[]): string[] =>
+  files.filter(
+    (file) => !NOISY_FILE_PATTERNS.some((pattern) => pattern.test(file))
+  )
+
+const extractMatches = (
+  lines: string[],
+  pattern: RegExp,
+  excludePattern?: RegExp
+): string[] =>
+  lines
+    .filter((line) => pattern.test(line))
+    .filter((line) => !excludePattern || !excludePattern.test(line))
+    .map((line) => line.trim())
+    .slice(0, 20) // Limit number of matches
+
+const extractDiffDetails = (rawDiff: string, files: string[]): GitDiff => {
+  const lines = rawDiff.split('\n')
+
+  return {
+    fileOperations: extractMatches(
+      lines,
+      /^diff --git|^new file|^deleted file|^rename/
+    ),
+    functionChanges: extractMatches(
+      lines,
+      /^\+.*\b(function|class|def|interface|enum|struct|module)\b/
+    ),
+    dependencyChanges: extractMatches(
+      lines,
+      /^\+.*("dependencies"|"devDependencies"|import |require |use |from )/
+    ),
+    additions: extractMatches(lines, /^\+[^+\s]/, /^\+\s*(\/\/|\*|#|$)/),
+    deletions: extractMatches(lines, /^\-[^-\s]/, /^\-\s*(\/\/|\*|#|$)/),
+    rawDiff: files.length > 0 ? rawDiff : '',
+  }
+}
+
+const generateSummary = (
+  diff: GitDiff,
+  stats: ProcessedDiff['stats']
+): string => {
+  const sections: string[] = []
+
+  if (diff.fileOperations.length > 0) {
+    sections.push('=== File Operations ===\n' + diff.fileOperations.join('\n'))
   }
 
-  async getAllChanges(): Promise<ProcessedDiff> {
-    const status = await this.git.status()
-    const diff = await this.git.diff()
-    return this.processDiff(diff, status.modified)
-  }
-
-  private async processDiff(
-    rawDiff: string,
-    changedFiles: string[]
-  ): Promise<ProcessedDiff> {
-    const filteredFiles = this.filterNoisyFiles(changedFiles)
-    const details = await this.extractDiffDetails(rawDiff, filteredFiles)
-
-    const stats = {
-      originalLength: rawDiff.length,
-      processedLength: details.rawDiff.length,
-      filesChanged: changedFiles.length,
-      additions: this.countLines(details.additions),
-      deletions: this.countLines(details.deletions),
-    }
-
-    const summary = this.generateSummary(details, stats)
-
-    return { summary, details, stats }
-  }
-
-  private filterNoisyFiles(files: string[]): string[] {
-    return files.filter(
-      (file) => !NOISY_FILE_PATTERNS.some((pattern) => pattern.test(file))
+  if (diff.functionChanges.length > 0) {
+    sections.push(
+      '=== Function Changes ===\n' + diff.functionChanges.join('\n')
     )
   }
 
-  private async extractDiffDetails(
-    rawDiff: string,
-    files: string[]
-  ): Promise<GitDiff> {
-    const lines = rawDiff.split('\n')
-
-    return {
-      fileOperations: this.extractMatches(
-        lines,
-        /^diff --git|^new file|^deleted file|^rename/
-      ),
-      functionChanges: this.extractMatches(
-        lines,
-        /^\+.*\b(function|class|def|interface|enum|struct|module)\b/
-      ),
-      dependencyChanges: this.extractMatches(
-        lines,
-        /^\+.*("dependencies"|"devDependencies"|import |require |use |from )/
-      ),
-      additions: this.extractMatches(lines, /^\+[^+\s]/, /^\+\s*(\/\/|\*|#|$)/),
-      deletions: this.extractMatches(lines, /^\-[^-\s]/, /^\-\s*(\/\/|\*|#|$)/),
-      rawDiff: files.length > 0 ? rawDiff : '',
-    }
+  if (diff.dependencyChanges.length > 0) {
+    sections.push(
+      '=== Dependency Changes ===\n' + diff.dependencyChanges.join('\n')
+    )
   }
 
-  private extractMatches(
-    lines: string[],
-    pattern: RegExp,
-    excludePattern?: RegExp
-  ): string[] {
-    return lines
-      .filter((line) => pattern.test(line))
-      .filter((line) => !excludePattern || !excludePattern.test(line))
-      .map((line) => line.trim())
-      .slice(0, 20) // Limit number of matches
+  if (diff.additions.length > 0) {
+    sections.push('=== Significant Additions ===\n' + diff.additions.join('\n'))
   }
 
-  private countLines(lines: string[]): number {
-    return lines.length
+  if (diff.deletions.length > 0) {
+    sections.push('=== Significant Deletions ===\n' + diff.deletions.join('\n'))
   }
 
-  private generateSummary(
-    diff: GitDiff,
-    stats: ProcessedDiff['stats']
-  ): string {
-    const sections: string[] = []
+  return sections.join('\n\n')
+}
 
-    if (diff.fileOperations.length > 0) {
-      sections.push(
-        '=== File Operations ===\n' + diff.fileOperations.join('\n')
-      )
-    }
+const processDiff = async (
+  rawDiff: string,
+  changedFiles: string[]
+): Promise<ProcessedDiff> => {
+  const filteredFiles = filterNoisyFiles(changedFiles)
+  const details = extractDiffDetails(rawDiff, filteredFiles)
 
-    if (diff.functionChanges.length > 0) {
-      sections.push(
-        '=== Function Changes ===\n' + diff.functionChanges.join('\n')
-      )
-    }
+  const stats = {
+    originalLength: rawDiff.length,
+    processedLength: details.rawDiff.length,
+    filesChanged: changedFiles.length,
+    additions: details.additions.length,
+    deletions: details.deletions.length,
+  }
 
-    if (diff.dependencyChanges.length > 0) {
-      sections.push(
-        '=== Dependency Changes ===\n' + diff.dependencyChanges.join('\n')
-      )
-    }
+  const summary = generateSummary(details, stats)
 
-    if (diff.additions.length > 0) {
-      sections.push(
-        '=== Significant Additions ===\n' + diff.additions.join('\n')
-      )
-    }
+  return { summary, details, stats }
+}
 
-    if (diff.deletions.length > 0) {
-      sections.push(
-        '=== Significant Deletions ===\n' + diff.deletions.join('\n')
-      )
-    }
+export const createDiffProcessor = (): DiffProcessor => {
+  const git = simpleGit()
 
-    return sections.join('\n\n')
+  const getStagedChanges = async (): Promise<ProcessedDiff> => {
+    const status = await git.status()
+    const diff = await git.diff(['--staged'])
+    return processDiff(diff, status.staged)
+  }
+
+  const getAllChanges = async (): Promise<ProcessedDiff> => {
+    const status = await git.status()
+    const diff = await git.diff()
+    return processDiff(diff, status.modified)
+  }
+
+  return {
+    getStagedChanges,
+    getAllChanges,
   }
 }

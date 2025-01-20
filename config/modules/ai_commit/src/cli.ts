@@ -2,12 +2,11 @@
 import { Command } from 'commander'
 import chalk from 'chalk'
 import { simpleGit } from 'simple-git'
-import { DiffProcessor } from './git/diffProcessor'
-import { OpenAIService } from './services/openai'
-import { Config, ConfigSchema } from './types'
-import { Logger } from './utils/logger'
+import { createDiffProcessor } from './git/diffProcessor'
+import { createOpenAIService } from './services/openai'
+import { Config, ConfigSchema, CommitMessage } from './types'
+import { createLogger } from './utils/logger'
 
-const program = new Command()
 const git = simpleGit()
 
 // Default configuration
@@ -34,7 +33,7 @@ const defaultConfig: Config = {
   },
 }
 
-program
+const program = new Command()
   .name('ai-commit')
   .description('AI-powered git commit message generator')
   .version('1.0.0')
@@ -42,9 +41,7 @@ program
   .option('-p, --gpt4', 'use GPT-4o for enhanced responses')
   .option('-h, --help', 'display help')
 
-async function doCommit(
-  message: string | { title: string; body?: string; footer?: string }
-): Promise<void> {
+const doCommit = async (message: string | CommitMessage): Promise<void> => {
   const { title, body, footer } =
     typeof message === 'string'
       ? { title: message, body: undefined, footer: undefined }
@@ -62,7 +59,7 @@ async function doCommit(
   await git.commit(fullMessage)
 }
 
-async function editMessage(message: string): Promise<string> {
+const editMessage = async (message: string): Promise<string> => {
   const editor = process.env.EDITOR || 'vim'
   const tempFile = '/tmp/commit-message.txt'
   const fs = await import('fs/promises')
@@ -84,7 +81,7 @@ async function editMessage(message: string): Promise<string> {
   })
 }
 
-async function viewDiff(): Promise<void> {
+const viewDiff = async (): Promise<void> => {
   const pager = process.env.GIT_PAGER || process.env.PAGER || 'less'
   const { spawn } = await import('child_process')
 
@@ -99,7 +96,49 @@ async function viewDiff(): Promise<void> {
   })
 }
 
-async function main() {
+const handleAction = async (
+  action: string,
+  message: CommitMessage,
+  logger: ReturnType<typeof createLogger>
+): Promise<void> => {
+  switch (action) {
+    case 'accept':
+      logger.info('✨ Committing changes...')
+      await doCommit(message)
+      logger.info('✅ Changes committed successfully!')
+      break
+    case 'edit':
+      logger.info('✏️  Opening editor...')
+      const editedMessage = await editMessage(
+        [message.title, '', message.body, message.footer]
+          .filter(Boolean)
+          .join('\n')
+      )
+
+      if (editedMessage) {
+        logger.info('✨ Committing changes...')
+        await doCommit(editedMessage)
+        logger.info('✅ Changes committed successfully!')
+      } else {
+        logger.error('❌ Commit cancelled - empty message')
+      }
+      break
+    case 'regenerate':
+      logger.info('🔄 Regenerating message...')
+      await main()
+      break
+    case 'diff':
+      logger.info('📄 Showing full diff...')
+      await viewDiff()
+      await main()
+      break
+    case 'cancel':
+      logger.info('❌ Commit cancelled')
+      process.exit(0)
+  }
+}
+
+const main = async (): Promise<void> => {
   program.parse()
   const options = program.opts()
 
@@ -122,9 +161,9 @@ async function main() {
       },
     })
 
-    const logger = new Logger(config.debug)
-    const diffProcessor = new DiffProcessor()
-    const openai = new OpenAIService(config.openai)
+    const logger = createLogger(config.debug)
+    const diffProcessor = createDiffProcessor()
+    const openai = createOpenAIService(config.openai)
 
     // Process git changes
     logger.info('🔍 Analyzing changes...')
@@ -169,41 +208,7 @@ async function main() {
       },
     ])
 
-    switch (action) {
-      case 'accept':
-        logger.info('✨ Committing changes...')
-        await doCommit(message)
-        logger.info('✅ Changes committed successfully!')
-        break
-      case 'edit':
-        logger.info('✏️  Opening editor...')
-        const editedMessage = await editMessage(
-          [message.title, '', message.body, message.footer]
-            .filter(Boolean)
-            .join('\n')
-        )
-
-        if (editedMessage) {
-          logger.info('✨ Committing changes...')
-          await doCommit(editedMessage)
-          logger.info('✅ Changes committed successfully!')
-        } else {
-          logger.error('❌ Commit cancelled - empty message')
-        }
-        break
-      case 'regenerate':
-        logger.info('🔄 Regenerating message...')
-        await main()
-        break
-      case 'diff':
-        logger.info('📄 Showing full diff...')
-        await viewDiff()
-        await main()
-        break
-      case 'cancel':
-        logger.info('❌ Commit cancelled')
-        process.exit(0)
-    }
+    await handleAction(action, message, logger)
   } catch (error) {
     console.error(
       chalk.red('Error:'),
