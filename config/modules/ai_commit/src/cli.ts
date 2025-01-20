@@ -2,9 +2,10 @@
 import { Command } from 'commander'
 import chalk from 'chalk'
 import { createOpenAIService } from './services/openai.service'
-import { Config, ConfigSchema, CommitMessage } from './types'
+import { Config, ConfigSchema } from './types'
 import { createLogger } from './utils/logger'
 import { gitService } from './services/git.service'
+import { uiService } from './services/ui.service'
 
 // Default configuration
 const defaultConfig: Config = {
@@ -37,83 +38,6 @@ const program = new Command()
   .option('-d, --debug', 'enable debug mode')
   .option('-p, --gpt4', 'use GPT-4o for enhanced responses')
   .option('-h, --help', 'display help')
-
-const editMessage = async (message: string): Promise<string> => {
-  const editor = process.env.EDITOR || 'vim'
-  const tempFile = '/tmp/commit-message.txt'
-  const fs = await import('fs/promises')
-  const { spawn } = await import('child_process')
-
-  await fs.writeFile(tempFile, message)
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(editor, [tempFile], { stdio: 'inherit' })
-    child.on('exit', async () => {
-      try {
-        const editedMessage = await fs.readFile(tempFile, 'utf8')
-        await fs.unlink(tempFile)
-        resolve(editedMessage.trim())
-      } catch (error) {
-        reject(error)
-      }
-    })
-  })
-}
-
-const viewDiff = async (): Promise<void> => {
-  const pager = process.env.GIT_PAGER || process.env.PAGER || 'less'
-  const { spawn } = await import('child_process')
-
-  return new Promise((resolve) => {
-    const diff = spawn('git', ['diff', '--staged'], {
-      stdio: ['inherit', 'pipe', 'inherit'],
-    })
-    const less = spawn(pager, [], { stdio: ['pipe', 'inherit', 'inherit'] })
-
-    diff.stdout.pipe(less.stdin)
-    less.on('exit', resolve)
-  })
-}
-
-const handleAction = async (
-  action: string,
-  message: CommitMessage,
-  logger: ReturnType<typeof createLogger>
-): Promise<void> => {
-  switch (action) {
-    case 'accept':
-      logger.info('✨ Committing changes...')
-      await gitService.commit(message)
-      logger.info('✅ Changes committed successfully!')
-      break
-    case 'edit':
-      logger.info('✏️  Opening editor...')
-      const editedMessage = await editMessage(
-        [message.title, '', message.body].filter(Boolean).join('\n')
-      )
-
-      if (editedMessage) {
-        logger.info('✨ Committing changes...')
-        await gitService.commit(editedMessage)
-        logger.info('✅ Changes committed successfully!')
-      } else {
-        logger.error('❌ Commit cancelled - empty message')
-      }
-      break
-    case 'regenerate':
-      logger.info('🔄 Regenerating message...')
-      await main()
-      break
-    case 'diff':
-      logger.info('📄 Showing full diff...')
-      await viewDiff()
-      await main()
-      break
-    case 'cancel':
-      logger.info('❌ Commit cancelled')
-      process.exit(0)
-  }
-}
 
 const main = async (): Promise<void> => {
   program.parse()
@@ -184,7 +108,13 @@ const main = async (): Promise<void> => {
       },
     ])
 
-    await handleAction(action, message, logger)
+    const result = await uiService.handleAction(action, message, logger)
+
+    if (result === 'restart') {
+      await main() // Restart the flow
+    } else if (result === 'exit') {
+      process.exit(0)
+    }
   } catch (error) {
     console.error(
       chalk.red('Error:'),
