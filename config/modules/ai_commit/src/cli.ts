@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { Command } from 'commander'
 import chalk from 'chalk'
 import { createOpenAIService } from './services/openai.service'
@@ -7,7 +6,9 @@ import { createLogger } from './utils/logger'
 import { gitService } from './services/git.service'
 import { uiService } from './services/ui.service'
 
-// Default configuration
+/**
+ * The default configuration for the CLI.
+ */
 const defaultConfig: Config = {
   openai: {
     apiKey: process.env.OPENAI_KEY || '',
@@ -31,6 +32,9 @@ const defaultConfig: Config = {
   },
 }
 
+/**
+ * The program instance for the CLI.
+ */
 const program = new Command()
   .name('ai-commit')
   .description('AI-powered git commit message generator')
@@ -39,6 +43,11 @@ const program = new Command()
   .option('-p, --gpt4', 'use GPT-4o for enhanced responses')
   .option('-h, --help', 'display help')
 
+/**
+ * Main function to run the CLI.
+ *
+ * @returns A promise that resolves when the CLI is finished.
+ */
 const main = async (): Promise<void> => {
   program.parse()
   const options = program.opts()
@@ -124,6 +133,9 @@ const main = async (): Promise<void> => {
   }
 }
 
+/**
+ * Entry point for the CLI.
+ */
 main().catch((error) => {
   console.error(chalk.red('Fatal error:'), error)
   process.exit(1)
