@@ -6,6 +6,10 @@
   "bin": {
     "ai-commit": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
