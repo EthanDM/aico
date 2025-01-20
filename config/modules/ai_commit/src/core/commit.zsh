@@ -1,57 +1,100 @@
-# AI-powered commit message generator
-function ai_commit() {
-    # Parse options
-    local debug=false
-    local log_api=false
-    local auto_stage=false
-    local skip_confirm=false
-    local verbose=false
-    local use_4o=false
-    local OPTIND
-    while getopts "dlsavhp" opt; do
-        case $opt in
-            d) debug=true ;;      # Debug mode - show all debug info
-            l) log_api=true ;;    # Log API responses only
-            s) auto_stage=true ;; # Auto-stage all changes
-            a) skip_confirm=true ;; # Auto-accept generated message
-            v) verbose=true ;;    # Verbose mode - show full diff
-            p) use_4o=true ;;     # Use GPT-4o for enhanced responses
-            h) ai_commit_help; return 0 ;;
-        esac
-    done
-    shift $((OPTIND-1))
-
-    # Set debug configuration
-    DEBUG_CONFIG[ENABLE_DEBUG]=$debug
-    DEBUG_CONFIG[LOG_API_RESPONSES]=$log_api
-    DEBUG_CONFIG[LOG_LEVEL]=${LOG_LEVELS[${debug:+DEBUG}:-INFO]}
-
-    # Check if OPENAI_KEY is set
+# Ensure required environment variables are set
+function ai_commit_check_environment() {
     if [ -z "$OPENAI_KEY" ]; then
-        echo "❌ Error: OPENAI_KEY environment variable is not set"
+        echo "❌ Error: Missing required environment variable: OPENAI_KEY"
         return 1
     fi
+}
 
-    # Check if there are any changes to commit
-    if [ -z "$(command git status --porcelain)" ]; then
+# Check if there are changes to commit
+function ai_commit_has_changes_to_commit() {
+    if [ -z "$(git status --porcelain)" ]; then
         echo "❌ No changes to commit"
         return 1
     fi
+}
 
-    echo "🔍 Analyzing changes..."
-    
-    # Get the diff of staged changes, or all changes if nothing is staged
-    local staged=true
-    if [ -z "$(command git diff --staged --name-only)" ]; then
-        staged=false
+# Determine if there are staged changes
+function ai_commit_has_staged_changes() {
+    if [ -n "$(git diff --staged --name-only)" ]; then
+        echo true
+    else
+        echo false
     fi
-    
-    # Auto-stage if flag is set
+}
+
+# Auto-stage changes if enabled
+function ai_commit_auto_stage_changes() {
+    local auto_stage=$1
+    local staged=$2
     if [ "$auto_stage" = true ] && [ "$staged" = false ]; then
         echo "📦 Auto-staging all changes..."
-        command git add .
-        staged=true
+        git add . || {
+            echo "❌ Error: Failed to auto-stage changes"
+            return 1
+        }
     fi
+}
+
+# AI-powered Git commit message generator
+#
+# Generates commit messages based on staged changes using AI.
+# Options:
+#   -d  Enable debug mode (detailed logs for debugging).
+#   -l  Log API responses only.
+#   -s  Auto-stage all unstaged changes.
+#   -a  Skip confirmation and auto-accept the generated message.
+#   -v  Enable verbose mode (show full diff).
+#   -p  Use GPT-4o for enhanced responses.
+#   -h  Show help for the function.
+#
+# Usage:
+#   ai_commit -dlsa
+#   ai_commit -p
+function ai_commit() {
+    # Parse options
+    local debug=false       # Enable debug mode
+    local log_api=false     # Log API responses only
+    local auto_stage=false  # Auto-stage all changes
+    local skip_confirm=false  # Auto-accept generated message
+    local verbose=false     # Verbose mode
+    local use_4o=false      # Use GPT-4o model
+    local OPTIND            # Option index for getopts
+
+    # Parse command-line options
+    while getopts "dlsavhp" opt; do
+        case $opt in
+            d) debug=true ;;      # Debug mode
+            l) log_api=true ;;    # Log API responses only
+            s) auto_stage=true ;; # Auto-stage changes
+            a) skip_confirm=true ;; # Skip confirmation
+            v) verbose=true ;;    # Verbose mode
+            p) use_4o=true ;;     # Use GPT-4o
+            h) ai_commit_help; return 0 ;; # Show help
+        esac
+    done
+    shift $((OPTIND-1))  # Remove processed options from arguments
+
+    # Set debug configuration
+    if [ "$debug" = true ]; then
+        DEBUG_CONFIG[ENABLE_DEBUG]=true
+        DEBUG_CONFIG[LOG_LEVEL]="DEBUG"
+    else
+        DEBUG_CONFIG[ENABLE_DEBUG]=false
+        DEBUG_CONFIG[LOG_LEVEL]="INFO"
+    fi
+    DEBUG_CONFIG[LOG_API_RESPONSES]=$log_api
+
+    # Check environment and changes
+    ai_commit_check_environment || return 1
+    ai_commit_has_changes_to_commit || return 1
+
+    echo "🔍 Analyzing changes..."
+    local staged
+    staged=$(ai_commit_has_staged_changes)
+
+    ai_commit_auto_stage_changes "$auto_stage" "$staged" || return 1
+
     
     # Get list of changed files and diff
     local changed_files=""
