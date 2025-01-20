@@ -62,7 +62,7 @@ function call_openai_api() {
     3. Provide additional details in the body, formatted as bullet points if necessary.
     4. Use imperative mood (e.g., 'Add', 'Fix', 'Update').
     5. DO NOT INCLUDE BACKTICKS, CODE BLOCKS, OR ANY OTHER MARKUP.
-    6. Use \"\\n\" to explicitly indicate line breaks in the content response.
+    6. Use \"\\n\" to explicitly indicate line breaks in the content response. DO NOT USE ANY OTHER LINE BREAK MARKUP.
 
     Git Status:
     $git_status
@@ -105,24 +105,24 @@ function call_openai_api() {
         -d "$json_data" 2>/dev/null)
 
 
+    # Check for curl errors
+    # if [ $? -ne 0 ]; then
+    #     log_error "Failed to connect to the OpenAI API." >&2
+    #     return 1
+    # fi
+
 
     commit_msg=$(echo "$response" | jq -r '.choices[0].message.content')
 
 
-    # Check for curl errors
-    if [ $? -ne 0 ]; then
-        log_error "Failed to connect to the OpenAI API." >&2
-        return 1
-    fi
-
     # Check for API errors
-    if echo "$response" | grep -q '"error":'; then
-        handle_api_error "$response" >&2
-        return 1
-    fi
+    # if echo "$response" | grep -q '"error":'; then
+    #     handle_api_error "$response" >&2
+    #     return 1
+    # fi
 
     # Log the response for debugging
-    log_api_response "$response" >&2
+    # log_api_response "$response" >&2
 
 
 
