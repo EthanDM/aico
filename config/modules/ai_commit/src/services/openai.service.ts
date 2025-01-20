@@ -18,17 +18,10 @@ ONLY SEND ONE COMMIT MESSAGE.`
  * Creates an OpenAIService instance.
  *
  * @param config - The OpenAI configuration.
- * @param debugConfig - The debug configuration.
  * @returns An instance of the OpenAIService.
  */
-export const createOpenAIService = (
-  config: OpenAIConfig,
-  debugConfig: Config['debug']
-): OpenAIService => {
+export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
   const client = new OpenAI({ apiKey: config.apiKey })
-
-  // Configure logger
-  loggerService.setConfig(debugConfig)
 
   /**
    * Builds the prompt for the OpenAI API.
@@ -56,9 +49,7 @@ export const createOpenAIService = (
     const branchName = await gitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
 
-    if (debugConfig.enabled) {
-      loggerService.debug(`🔍 Current branch: ${branchName}`)
-    }
+    loggerService.debug(`🔍 Current branch: ${branchName}`)
 
     // Add recent commits context
     const recentCommits = await gitService.getRecentCommits(5)
@@ -73,10 +64,8 @@ export const createOpenAIService = (
       })
     }
 
-    if (debugConfig.enabled) {
-      loggerService.debug('🔍 Recent commits:')
-      loggerService.debug(parts.join('\n'))
-    }
+    loggerService.debug('🔍 Recent commits:')
+    loggerService.debug(parts.join('\n'))
 
     // Add diff information
     parts.push('\nCurrent changes:')
@@ -166,18 +155,18 @@ export const createOpenAIService = (
       },
     ]
 
-    if (debugConfig.enabled) {
-      loggerService.debug('🔍 API Request:')
-      loggerService.debug(`Model: ${config.model}`)
-      loggerService.debug(`Max Tokens: ${config.maxTokens}`)
-      loggerService.debug(`Temperature: ${config.temperature}`)
-      loggerService.debug('Messages:')
-      loggerService.debug(`system: ${messages[0].content}`)
-      // Skip logging the full diff since it's already logged in workflow
-      loggerService.debug('user: <diff content omitted>')
+    loggerService.debug('\n🔍 Building OpenAI Request:')
+    loggerService.debug(`Model: ${config.model}`)
+    loggerService.debug(`Max Tokens: ${config.maxTokens}`)
+    loggerService.debug(`Temperature: ${config.temperature}`)
+    loggerService.debug('Messages:')
+    loggerService.debug(`system: ${messages[0].content}`)
+    // Skip logging the full diff since it's already logged in workflow
+    loggerService.debug('user: <diff content omitted>')
 
-      // loggerService.debug(`user: ${messages[1].content}`)
-    }
+    // loggerService.debug(`user: ${messages[1].content}`)
+
+    loggerService.debug('\n📤 Sending request to OpenAI...')
 
     const response = await client.chat.completions.create({
       model: config.model,
@@ -191,10 +180,8 @@ export const createOpenAIService = (
 
     loggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
 
-    if (debugConfig.enabled) {
-      loggerService.debug('🔍 API Response:')
-      loggerService.debug(JSON.stringify(response, null, 2))
-    }
+    loggerService.debug('\n📥 Received response from OpenAI:')
+    loggerService.debug(JSON.stringify(response, null, 2))
 
     const content = response.choices[0]?.message?.content
     if (!content) {

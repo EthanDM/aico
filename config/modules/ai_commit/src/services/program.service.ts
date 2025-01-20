@@ -83,6 +83,7 @@ export const createProgramService = (): ProgramService => {
         debug: {
           ...defaultConfig.debug,
           enabled: options.debug,
+          logLevel: options.debug ? 'DEBUG' : defaultConfig.debug.logLevel,
         },
         openai: {
           ...defaultConfig.openai,
@@ -93,14 +94,13 @@ export const createProgramService = (): ProgramService => {
       // Configure logger
       loggerService.setConfig(config.debug)
 
-      if (config.debug.enabled) {
-        loggerService.debug('Options: ' + JSON.stringify(options, null, 2))
-        loggerService.debug('Config: ' + JSON.stringify(config, null, 2))
-      }
+      loggerService.debug('🔧 Debug mode enabled')
+      loggerService.debug('Options: ' + JSON.stringify(options, null, 2))
+      loggerService.debug('Config: ' + JSON.stringify(config, null, 2))
 
       return { config, options }
     } catch (error) {
-      console.error('Failed to parse config:', error)
+      loggerService.error('Failed to parse config: ' + String(error))
       throw error
     }
   }

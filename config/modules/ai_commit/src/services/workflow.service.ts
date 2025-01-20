@@ -19,7 +19,7 @@ interface WorkflowService {
  * @returns An instance of the WorkflowService.
  */
 export const createWorkflowService = (config: Config): WorkflowService => {
-  const openai = createOpenAIService(config.openai, config.debug)
+  const openai = createOpenAIService(config.openai)
 
   /**
    * Logs debug information about the diff.
@@ -27,8 +27,6 @@ export const createWorkflowService = (config: Config): WorkflowService => {
    * @param diff - The processed diff information.
    */
   const logDebugDiff = (diff: ProcessedDiff): void => {
-    if (!config.debug.enabled) return
-
     loggerService.debug('\n📊 Git Stats:')
     loggerService.debug(`Files changed: ${diff.stats.filesChanged}`)
     loggerService.debug(`Additions: ${diff.stats.additions}`)
@@ -59,7 +57,10 @@ export const createWorkflowService = (config: Config): WorkflowService => {
       )
     }
 
-    loggerService.debug('\n📄 Summary:')
+    loggerService.debug('\n📄 Raw Diff:')
+    loggerService.debug(diff.details.rawDiff)
+
+    loggerService.debug('\n📝 Summary:')
     loggerService.debug(diff.summary)
   }
 
@@ -120,8 +121,8 @@ export const createWorkflowService = (config: Config): WorkflowService => {
   ): Promise<CommitMessage> => {
     loggerService.info('🔍 Analyzing changes...')
 
-    if (userMessage && config.debug.enabled) {
-      loggerService.debug(`🔍 User provided message: ${userMessage}`)
+    if (userMessage) {
+      loggerService.debug(`\n💬 User provided message: ${userMessage}`)
     }
 
     // Check both staged and all changes
@@ -129,6 +130,10 @@ export const createWorkflowService = (config: Config): WorkflowService => {
       gitService.hasStaged(),
       gitService.hasChanges(),
     ])
+
+    loggerService.debug('\n📋 Git Status:')
+    loggerService.debug(`Has staged changes: ${hasStaged}`)
+    loggerService.debug(`Has working changes: ${hasChanges}`)
 
     // Handle different staging states
     if (!hasChanges) {
