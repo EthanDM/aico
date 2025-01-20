@@ -64,6 +64,46 @@ export const createWorkflowService = (
   }
 
   /**
+   * Prompts the user about staging changes.
+   *
+   * @returns True if we should proceed (either changes were staged or user wants to continue anyway).
+   */
+  const handleUnstagedChanges = async (
+    stagedCount: number,
+    totalCount: number
+  ): Promise<boolean> => {
+    logger.warn('⚠️  Some changes are not staged for commit')
+    logger.info('   Staged: ' + chalk.green(`${stagedCount} files`))
+    logger.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
+
+    const { default: inquirer } = await import('inquirer')
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'Would you like to stage the remaining changes?',
+        choices: [
+          { name: 'Stage all changes', value: 'stage' },
+          { name: 'Continue with staged changes only', value: 'continue' },
+          { name: 'Cancel', value: 'cancel' },
+        ],
+      },
+    ])
+
+    switch (action) {
+      case 'stage':
+        await gitService.stageAll()
+        return true
+      case 'continue':
+        return true
+      case 'cancel':
+        process.exit(0)
+      default:
+        return false
+    }
+  }
+
+  /**
    * Generates a commit message based on staged changes.
    *
    * @returns The generated commit message.
@@ -71,17 +111,66 @@ export const createWorkflowService = (
    */
   const generateCommitMessage = async (): Promise<CommitMessage> => {
     logger.info('🔍 Analyzing changes...')
-    const diff = await gitService.getStagedChanges()
 
-    if (diff.stats.filesChanged === 0) {
-      throw new Error('No changes to commit')
+    // Check both staged and all changes
+    const [hasStaged, hasChanges] = await Promise.all([
+      gitService.hasStaged(),
+      gitService.hasChanges(),
+    ])
+
+    // Handle different staging states
+    if (!hasChanges) {
+      throw new Error('No changes detected in the working directory')
+    }
+
+    if (!hasStaged) {
+      logger.warn('No changes are currently staged for commit')
+      const { default: inquirer } = await import('inquirer')
+      const { action } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'action',
+          message: 'Would you like to stage all changes?',
+          choices: [
+            { name: 'Stage all changes', value: 'stage' },
+            { name: 'Cancel', value: 'cancel' },
+          ],
+        },
+      ])
+
+      if (action === 'stage') {
+        await gitService.stageAll()
+      } else {
+        process.exit(0)
+      }
+    }
+
+    // Get diffs after potential staging
+    let stagedDiff = await gitService.getStagedChanges()
+    const allDiff = await gitService.getAllChanges()
+
+    // Check if there are still unstaged changes
+    if (stagedDiff.stats.filesChanged < allDiff.stats.filesChanged) {
+      const shouldProceed = await handleUnstagedChanges(
+        stagedDiff.stats.filesChanged,
+        allDiff.stats.filesChanged
+      )
+
+      if (!shouldProceed) {
+        process.exit(0)
+      }
+
+      // Refresh diff if we staged more changes
+      if (stagedDiff.stats.filesChanged !== allDiff.stats.filesChanged) {
+        stagedDiff = await gitService.getStagedChanges()
+      }
     }
 
     // Log detailed diff information in debug mode
-    logDebugDiff(diff)
+    logDebugDiff(stagedDiff)
 
     logger.info('💭 Generating commit message...')
-    const message = await openai.generateCommitMessage(diff)
+    const message = await openai.generateCommitMessage(stagedDiff)
 
     console.log('\n💡 Proposed commit message:')
     console.log(chalk.green(message.title))

@@ -14,6 +14,7 @@ interface GitService {
   commit(message: CommitMessage | string): Promise<void>
   hasChanges(): Promise<boolean>
   hasStaged(): Promise<boolean>
+  stageAll(): Promise<void>
 }
 
 /**
@@ -146,6 +147,13 @@ const createGitService = (): GitService => {
   }
 
   /**
+   * Stages all changes in the working directory.
+   */
+  const stageAll = async (): Promise<void> => {
+    await git.add('.')
+  }
+
+  /**
    * Returns the GitService instance.
    *
    * @returns The GitService instance.
@@ -157,6 +165,7 @@ const createGitService = (): GitService => {
     commit,
     hasChanges,
     hasStaged,
+    stageAll,
   }
 }
 
