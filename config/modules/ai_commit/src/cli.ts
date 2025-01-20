@@ -4,7 +4,7 @@ import chalk from 'chalk'
 import { createOpenAIService } from './services/openai'
 import { Config, ConfigSchema, CommitMessage } from './types'
 import { createLogger } from './utils/logger'
-import { gitService } from './services/git'
+import { gitService } from './services/git.service'
 
 // Default configuration
 const defaultConfig: Config = {
