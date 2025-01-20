@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { Config, CommitMessage } from '../types'
+import { Config, CommitMessage, ProcessedDiff } from '../types'
 import { createOpenAIService } from './openai.service'
 import { gitService } from './git.service'
 import { uiService } from './ui.service'
@@ -7,10 +7,6 @@ import { createLogger } from '../utils/logger'
 
 interface WorkflowService {
   generateCommitMessage: () => Promise<CommitMessage>
-  displayResults: (
-    diff: Awaited<ReturnType<typeof gitService.getStagedChanges>>,
-    message: CommitMessage
-  ) => void
   promptForAction: (
     message: CommitMessage
   ) => Promise<'exit' | 'restart' | void>
@@ -30,6 +26,44 @@ export const createWorkflowService = (
   const openai = createOpenAIService(config.openai, config.debug)
 
   /**
+   * Logs debug information about the diff.
+   *
+   * @param diff - The processed diff information.
+   */
+  const logDebugDiff = (diff: ProcessedDiff): void => {
+    if (!config.debug.enabled) return
+
+    logger.debug('\n📊 Git Stats:')
+    logger.debug(`Files changed: ${diff.stats.filesChanged}`)
+    logger.debug(`Additions: ${diff.stats.additions}`)
+    logger.debug(`Deletions: ${diff.stats.deletions}`)
+    if (diff.stats.wasSummarized) {
+      logger.debug('(Diff was summarized due to size)')
+      logger.debug(`Original length: ${diff.stats.originalLength}`)
+      logger.debug(`Processed length: ${diff.stats.processedLength}`)
+    }
+
+    logger.debug('\n📝 Changes:')
+    if (diff.details.fileOperations.length > 0) {
+      logger.debug('\nFile Operations:')
+      diff.details.fileOperations.forEach((op) => logger.debug(`  ${op}`))
+    }
+    if (diff.details.functionChanges.length > 0) {
+      logger.debug('\nFunction Changes:')
+      diff.details.functionChanges.forEach((change) =>
+        logger.debug(`  ${change}`)
+      )
+    }
+    if (diff.details.dependencyChanges.length > 0) {
+      logger.debug('\nDependency Changes:')
+      diff.details.dependencyChanges.forEach((dep) => logger.debug(`  ${dep}`))
+    }
+
+    logger.debug('\n📄 Summary:')
+    logger.debug(diff.summary)
+  }
+
+  /**
    * Generates a commit message based on staged changes.
    *
    * @returns The generated commit message.
@@ -43,34 +77,19 @@ export const createWorkflowService = (
       throw new Error('No changes to commit')
     }
 
+    // Log detailed diff information in debug mode
+    logDebugDiff(diff)
+
     logger.info('💭 Generating commit message...')
     const message = await openai.generateCommitMessage(diff)
-
-    displayResults(diff, message)
-    return message
-  }
-
-  /**
-   * Displays the changes and proposed commit message.
-   *
-   * @param diff - The git diff information.
-   * @param message - The generated commit message.
-   */
-  const displayResults = (
-    diff: Awaited<ReturnType<typeof gitService.getStagedChanges>>,
-    message: CommitMessage
-  ): void => {
-    console.log('\n📝 Changes to be committed:')
-    if (diff.stats.wasSummarized) {
-      console.log(chalk.blue('(Summarized due to size)'))
-    }
-    console.log(chalk.blue(diff.summary))
 
     console.log('\n💡 Proposed commit message:')
     console.log(chalk.green(message.title))
     if (message.body) {
       console.log('\n' + message.body)
     }
+
+    return message
   }
 
   /**
@@ -103,7 +122,6 @@ export const createWorkflowService = (
 
   return {
     generateCommitMessage,
-    displayResults,
     promptForAction,
   }
 }

@@ -126,9 +126,9 @@ export const createOpenAIService = (
       logger.debug(`Max Tokens: ${config.maxTokens}`)
       logger.debug(`Temperature: ${config.temperature}`)
       logger.debug('Messages:')
-      messages.forEach((msg) => {
-        logger.debug(`${msg.role}: ${msg.content}`)
-      })
+      logger.debug(`system: ${messages[0].content}`)
+      // Skip logging the full diff since it's already logged in workflow
+      logger.debug('user: <diff content omitted>')
     }
 
     const response = await client.chat.completions.create({
