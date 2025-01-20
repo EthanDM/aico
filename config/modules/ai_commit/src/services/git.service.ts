@@ -1,5 +1,6 @@
 import { simpleGit, SimpleGit } from 'simple-git'
 import { ProcessedDiff, CommitMessage } from '../types'
+import { diffProcessor } from '../processors/diffProcessor'
 
 interface GitCommit {
   hash: string
@@ -134,20 +135,38 @@ const createGitService = (): GitService => {
   }
 
   /**
-   * Commits the changes to the git repository.
+   * Gets the staged changes with processed diff information.
    *
-   * @param message - The commit message to commit.
-   * @returns A promise that resolves when the commit is successful.
+   * @returns The processed diff of staged changes.
    */
-  const commit = async (message: CommitMessage | string): Promise<void> => {
-    const formattedMessage = formatCommitMessage(message)
-    await git.commit(formattedMessage)
+  const getStagedChanges = async (): Promise<ProcessedDiff> => {
+    const diff = await getStagedDiff()
+    return diffProcessor.processDiff(diff)
   }
 
   /**
-   * Checks if there are any changes in the git repository.
+   * Gets all changes with processed diff information.
    *
-   * @returns Whether there are any changes in the git repository.
+   * @returns The processed diff of all changes.
+   */
+  const getAllChanges = async (): Promise<ProcessedDiff> => {
+    const diff = await getAllDiff()
+    return diffProcessor.processDiff(diff)
+  }
+
+  /**
+   * Gets a short status display of changes.
+   *
+   * @returns The short status display.
+   */
+  const getShortStatus = async (): Promise<string> => {
+    return git.raw(['status', '--short'])
+  }
+
+  /**
+   * Checks if there are any changes in the working directory.
+   *
+   * @returns True if there are changes, false otherwise.
    */
   const hasChanges = async (): Promise<boolean> => {
     const status = await getStatus()
@@ -155,51 +174,13 @@ const createGitService = (): GitService => {
   }
 
   /**
-   * Checks if there are any staged changes in the git repository.
+   * Checks if there are any staged changes.
    *
-   * @returns Whether there are any staged changes in the git repository.
+   * @returns True if there are staged changes, false otherwise.
    */
   const hasStaged = async (): Promise<boolean> => {
     const status = await getStatus()
     return status.staged.length > 0
-  }
-
-  /**
-   * Processes the diff of the git repository.
-   *
-   * @param rawDiff - The raw diff of the git repository.
-   * @param changedFiles - The changed files of the git repository.
-   * @returns The processed diff of the git repository.
-   */
-  const processDiff = async (
-    rawDiff: string,
-    changedFiles: string[]
-  ): Promise<ProcessedDiff> => {
-    // Import the processDiff function from diffProcessor
-    const { processDiff: processGitDiff } = await import('../git/diffProcessor')
-    return processGitDiff(rawDiff, changedFiles)
-  }
-
-  /**
-   * Gets the staged changes of the git repository.
-   *
-   * @returns The staged changes of the git repository.
-   */
-  const getStagedChanges = async (): Promise<ProcessedDiff> => {
-    const status = await getStatus()
-    const diff = await getStagedDiff()
-    return processDiff(diff, status.staged)
-  }
-
-  /**
-   * Gets the all changes of the git repository.
-   *
-   * @returns The all changes of the git repository.
-   */
-  const getAllChanges = async (): Promise<ProcessedDiff> => {
-    const status = await getStatus()
-    const diff = await getAllDiff()
-    return processDiff(diff, status.modified)
   }
 
   /**
@@ -210,12 +191,12 @@ const createGitService = (): GitService => {
   }
 
   /**
-   * Gets a short status display of changes.
+   * Commits the staged changes.
    *
-   * @returns The short status display.
+   * @param message - The commit message.
    */
-  const getShortStatus = async (): Promise<string> => {
-    return git.raw(['status', '--short'])
+  const commit = async (message: CommitMessage | string): Promise<void> => {
+    await git.commit(formatCommitMessage(message))
   }
 
   /**
