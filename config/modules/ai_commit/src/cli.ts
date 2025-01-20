@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
 import chalk from 'chalk'
-import { simpleGit } from 'simple-git'
-import { createDiffProcessor } from './git/diffProcessor'
 import { createOpenAIService } from './services/openai'
 import { Config, ConfigSchema, CommitMessage } from './types'
 import { createLogger } from './utils/logger'
-
-const git = simpleGit()
+import { gitService } from './services/git'
 
 // Default configuration
 const defaultConfig: Config = {
@@ -42,18 +39,7 @@ const program = new Command()
   .option('-h, --help', 'display help')
 
 const doCommit = async (message: string | CommitMessage): Promise<void> => {
-  const { title, body } =
-    typeof message === 'string' ? { title: message, body: undefined } : message
-
-  const fullMessage = [
-    title,
-    '', // Empty line after title
-    body,
-  ]
-    .filter(Boolean)
-    .join('\n')
-
-  await git.commit(fullMessage)
+  await gitService.commit(message)
 }
 
 const editMessage = async (message: string): Promise<string> => {
@@ -157,12 +143,11 @@ const main = async (): Promise<void> => {
     })
 
     const logger = createLogger(config.debug)
-    const diffProcessor = createDiffProcessor()
     const openai = createOpenAIService(config.openai, config.debug)
 
     // Process git changes
     logger.info('🔍 Analyzing changes...')
-    const diff = await diffProcessor.getStagedChanges()
+    const diff = await gitService.getStagedChanges()
 
     if (diff.stats.filesChanged === 0) {
       logger.error('❌ No changes to commit')

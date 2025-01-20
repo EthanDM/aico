@@ -1,4 +1,3 @@
-import { simpleGit } from 'simple-git'
 import { GitDiff, ProcessedDiff } from '../types'
 
 const NOISY_FILE_PATTERNS = [
@@ -23,11 +22,6 @@ const NOISY_FILE_PATTERNS = [
   /^logs\//,
   /\.log$/,
 ]
-
-interface DiffProcessor {
-  getStagedChanges: () => Promise<ProcessedDiff>
-  getAllChanges: () => Promise<ProcessedDiff>
-}
 
 const filterNoisyFiles = (files: string[]): string[] =>
   files.filter(
@@ -69,7 +63,7 @@ const extractDiffDetails = (rawDiff: string, files: string[]): GitDiff => {
 
 const TOKEN_LIMIT = 20000
 
-const processDiff = async (
+export const processDiff = async (
   rawDiff: string,
   changedFiles: string[]
 ): Promise<ProcessedDiff> => {
@@ -136,25 +130,4 @@ const generateSummary = (diff: GitDiff): string => {
   }
 
   return sections.join('\n\n')
-}
-
-export const createDiffProcessor = (): DiffProcessor => {
-  const git = simpleGit()
-
-  const getStagedChanges = async (): Promise<ProcessedDiff> => {
-    const status = await git.status()
-    const diff = await git.diff(['--staged'])
-    return processDiff(diff, status.staged)
-  }
-
-  const getAllChanges = async (): Promise<ProcessedDiff> => {
-    const status = await git.status()
-    const diff = await git.diff()
-    return processDiff(diff, status.modified)
-  }
-
-  return {
-    getStagedChanges,
-    getAllChanges,
-  }
 }
