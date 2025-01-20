@@ -25,7 +25,7 @@ export class OpenAIService {
             Types: feat|fix|docs|style|refactor|test|chore
             Keep the first line under 72 characters.
             Use bullet points for the body if needed.
-            Include breaking changes and issue references in the footer if applicable.`,
+            DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.`,
         },
         {
           role: 'user',
