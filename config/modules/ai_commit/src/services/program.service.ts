@@ -94,6 +94,7 @@ export const createProgramService = (): ProgramService => {
       // Configure logger
       loggerService.setConfig(config.debug)
 
+      // Log initial debug information
       loggerService.debug('🔧 Debug mode enabled')
       loggerService.debug('Options: ' + JSON.stringify(options, null, 2))
       loggerService.debug('Config: ' + JSON.stringify(config, null, 2))

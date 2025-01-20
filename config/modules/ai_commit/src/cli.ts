@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import chalk from 'chalk'
 import { programService } from './services/program.service'
 import { createWorkflow } from './services/workflow.service'
 import { loggerService } from './services/logger.service'

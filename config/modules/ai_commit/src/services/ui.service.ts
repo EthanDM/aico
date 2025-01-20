@@ -1,4 +1,3 @@
-import chalk from 'chalk'
 import { CommitMessage } from '../types'
 import { loggerService } from './logger.service'
 import { gitService } from './git.service'
