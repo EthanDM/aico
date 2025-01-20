@@ -8,61 +8,6 @@ interface OpenAIService {
   generateCommitMessage: (diff: ProcessedDiff) => Promise<CommitMessage>
 }
 
-const buildPrompt = (diff: ProcessedDiff): string => {
-  const parts = ['Generate a commit message for the following changes:']
-
-  if (diff.stats.wasSummarized) {
-    // For summarized diffs, include the summary and stats
-    parts.push(diff.summary)
-    parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
-    parts.push(`Additions: ${diff.stats.additions}`)
-    parts.push(`Deletions: ${diff.stats.deletions}`)
-  } else {
-    // For raw diffs, just include the diff directly
-    parts.push('\nRaw diff:')
-    parts.push(diff.summary)
-  }
-
-  return parts.join('\n')
-}
-
-const parseCommitMessage = (content: string): CommitMessage => {
-  const lines = content.trim().split('\n')
-  const title = lines[0].trim()
-
-  // Find the body (everything after the title and first empty line)
-  const bodyLines: string[] = []
-  let bodyStarted = false
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim()
-
-    // Skip empty lines until we find content
-    if (!bodyStarted && !line) {
-      continue
-    }
-
-    // Start collecting body content
-    if (line) {
-      bodyStarted = true
-      bodyLines.push(line)
-    } else if (bodyStarted) {
-      // Keep empty lines that are between body paragraphs
-      bodyLines.push('')
-    }
-  }
-
-  // Remove trailing empty lines from body
-  while (bodyLines.length > 0 && !bodyLines[bodyLines.length - 1]) {
-    bodyLines.pop()
-  }
-
-  return {
-    title,
-    body: bodyLines.length > 0 ? bodyLines.join('\n') : undefined,
-  }
-}
-
 /**
  * Creates an OpenAIService instance.
  *
@@ -76,6 +21,73 @@ export const createOpenAIService = (
 ): OpenAIService => {
   const client = new OpenAI({ apiKey: config.apiKey })
   const logger = createLogger(debugConfig)
+
+  /**
+   * Builds the prompt for the OpenAI API.
+   *
+   * @param diff - The diff to generate a commit message for.
+   * @returns The prompt for the OpenAI API.
+   */
+  const buildPrompt = (diff: ProcessedDiff): string => {
+    const parts = ['Generate a commit message for the following changes:']
+
+    if (diff.stats.wasSummarized) {
+      // For summarized diffs, include the summary and stats
+      parts.push(diff.summary)
+      parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
+      parts.push(`Additions: ${diff.stats.additions}`)
+      parts.push(`Deletions: ${diff.stats.deletions}`)
+    } else {
+      // For raw diffs, just include the diff directly
+      parts.push('\nRaw diff:')
+      parts.push(diff.summary)
+    }
+
+    return parts.join('\n')
+  }
+
+  /**
+   * Parses the commit message from the OpenAI response.
+   *
+   * @param content - The content of the OpenAI response.
+   * @returns The commit message.
+   */
+  const parseCommitMessage = (content: string): CommitMessage => {
+    const lines = content.trim().split('\n')
+    const title = lines[0].trim()
+
+    // Find the body (everything after the title and first empty line)
+    const bodyLines: string[] = []
+    let bodyStarted = false
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim()
+
+      // Skip empty lines until we find content
+      if (!bodyStarted && !line) {
+        continue
+      }
+
+      // Start collecting body content
+      if (line) {
+        bodyStarted = true
+        bodyLines.push(line)
+      } else if (bodyStarted) {
+        // Keep empty lines that are between body paragraphs
+        bodyLines.push('')
+      }
+    }
+
+    // Remove trailing empty lines from body
+    while (bodyLines.length > 0 && !bodyLines[bodyLines.length - 1]) {
+      bodyLines.pop()
+    }
+
+    return {
+      title,
+      body: bodyLines.length > 0 ? bodyLines.join('\n') : undefined,
+    }
+  }
 
   /**
    * Generates a commit message for the given diff.
