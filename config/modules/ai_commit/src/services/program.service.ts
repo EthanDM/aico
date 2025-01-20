@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { Config, ConfigSchema } from '../types/index'
-import { createLogger } from '../utils/logger'
+import { loggerService } from './logger.service'
 
 interface ProgramOptions {
   debug?: boolean
@@ -11,7 +11,6 @@ interface ProgramOptions {
 interface ProgramService {
   initialize: () => Promise<{
     config: Config
-    logger: ReturnType<typeof createLogger>
     options: ProgramOptions
   }>
 }
@@ -53,12 +52,11 @@ export const createProgramService = (): ProgramService => {
   /**
    * Initializes the program, parses options, and creates configuration.
    *
-   * @returns The program configuration and logger.
+   * @returns The program configuration and options.
    * @throws Error if OPENAI_KEY is not set.
    */
   const initialize = async (): Promise<{
     config: Config
-    logger: ReturnType<typeof createLogger>
     options: ProgramOptions
   }> => {
     // Parse command line arguments
@@ -72,9 +70,6 @@ export const createProgramService = (): ProgramService => {
 
     program.parse(process.argv)
     const options = program.opts<ProgramOptions>()
-
-    console.log('Debug - Options:', options)
-    console.log('Debug - Default Config:', defaultConfig)
 
     // Validate environment
     if (!process.env.OPENAI_KEY) {
@@ -94,9 +89,16 @@ export const createProgramService = (): ProgramService => {
           model: options.gpt4 ? 'gpt-4' : defaultConfig.openai.model,
         },
       })
-      console.log('Debug - Parsed Config:', config)
-      const logger = createLogger(config.debug)
-      return { config, logger, options }
+
+      // Configure logger
+      loggerService.setConfig(config.debug)
+
+      if (config.debug.enabled) {
+        loggerService.debug('Options: ' + JSON.stringify(options, null, 2))
+        loggerService.debug('Config: ' + JSON.stringify(config, null, 2))
+      }
+
+      return { config, options }
     } catch (error) {
       console.error('Failed to parse config:', error)
       throw error

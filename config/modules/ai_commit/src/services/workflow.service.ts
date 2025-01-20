@@ -3,7 +3,7 @@ import { Config, CommitMessage, ProcessedDiff } from '../types'
 import { createOpenAIService } from './openai.service'
 import { gitService } from './git.service'
 import { uiService } from './ui.service'
-import { createLogger } from '../utils/logger'
+import { loggerService } from './logger.service'
 
 interface WorkflowService {
   generateCommitMessage: (userMessage?: string) => Promise<CommitMessage>
@@ -16,13 +16,9 @@ interface WorkflowService {
  * Creates a workflow service to handle the commit message generation flow.
  *
  * @param config - The program configuration.
- * @param logger - The logger instance.
  * @returns An instance of the WorkflowService.
  */
-export const createWorkflowService = (
-  config: Config,
-  logger: ReturnType<typeof createLogger>
-): WorkflowService => {
+export const createWorkflowService = (config: Config): WorkflowService => {
   const openai = createOpenAIService(config.openai, config.debug)
 
   /**
@@ -33,34 +29,38 @@ export const createWorkflowService = (
   const logDebugDiff = (diff: ProcessedDiff): void => {
     if (!config.debug.enabled) return
 
-    logger.debug('\n📊 Git Stats:')
-    logger.debug(`Files changed: ${diff.stats.filesChanged}`)
-    logger.debug(`Additions: ${diff.stats.additions}`)
-    logger.debug(`Deletions: ${diff.stats.deletions}`)
+    loggerService.debug('\n📊 Git Stats:')
+    loggerService.debug(`Files changed: ${diff.stats.filesChanged}`)
+    loggerService.debug(`Additions: ${diff.stats.additions}`)
+    loggerService.debug(`Deletions: ${diff.stats.deletions}`)
     if (diff.stats.wasSummarized) {
-      logger.debug('(Diff was summarized due to size)')
-      logger.debug(`Original length: ${diff.stats.originalLength}`)
-      logger.debug(`Processed length: ${diff.stats.processedLength}`)
+      loggerService.debug('(Diff was summarized due to size)')
+      loggerService.debug(`Original length: ${diff.stats.originalLength}`)
+      loggerService.debug(`Processed length: ${diff.stats.processedLength}`)
     }
 
-    logger.debug('\n📝 Changes:')
+    loggerService.debug('\n📝 Changes:')
     if (diff.details.fileOperations.length > 0) {
-      logger.debug('\nFile Operations:')
-      diff.details.fileOperations.forEach((op) => logger.debug(`  ${op}`))
+      loggerService.debug('\nFile Operations:')
+      diff.details.fileOperations.forEach((op) =>
+        loggerService.debug(`  ${op}`)
+      )
     }
     if (diff.details.functionChanges.length > 0) {
-      logger.debug('\nFunction Changes:')
+      loggerService.debug('\nFunction Changes:')
       diff.details.functionChanges.forEach((change) =>
-        logger.debug(`  ${change}`)
+        loggerService.debug(`  ${change}`)
       )
     }
     if (diff.details.dependencyChanges.length > 0) {
-      logger.debug('\nDependency Changes:')
-      diff.details.dependencyChanges.forEach((dep) => logger.debug(`  ${dep}`))
+      loggerService.debug('\nDependency Changes:')
+      diff.details.dependencyChanges.forEach((dep) =>
+        loggerService.debug(`  ${dep}`)
+      )
     }
 
-    logger.debug('\n📄 Summary:')
-    logger.debug(diff.summary)
+    loggerService.debug('\n📄 Summary:')
+    loggerService.debug(diff.summary)
   }
 
   /**
@@ -72,9 +72,9 @@ export const createWorkflowService = (
     stagedCount: number,
     totalCount: number
   ): Promise<boolean> => {
-    logger.warn('⚠️  Some changes are not staged for commit')
-    logger.info('   Staged: ' + chalk.green(`${stagedCount} files`))
-    logger.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
+    loggerService.warn('⚠️  Some changes are not staged for commit')
+    loggerService.info('   Staged: ' + chalk.green(`${stagedCount} files`))
+    loggerService.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
 
     // Show status before prompting
     const status = await gitService.getShortStatus()
@@ -118,10 +118,10 @@ export const createWorkflowService = (
   const generateCommitMessage = async (
     userMessage?: string
   ): Promise<CommitMessage> => {
-    logger.info('🔍 Analyzing changes...')
+    loggerService.info('🔍 Analyzing changes...')
 
     if (userMessage && config.debug.enabled) {
-      logger.debug(`🔍 User provided message: ${userMessage}`)
+      loggerService.debug(`🔍 User provided message: ${userMessage}`)
     }
 
     // Check both staged and all changes
@@ -136,7 +136,7 @@ export const createWorkflowService = (
     }
 
     if (!hasStaged) {
-      logger.warn('No changes are currently staged for commit')
+      loggerService.warn('No changes are currently staged for commit')
 
       // Show status before prompting
       const status = await gitService.getShortStatus()
@@ -187,14 +187,14 @@ export const createWorkflowService = (
     // Log detailed diff information in debug mode
     logDebugDiff(stagedDiff)
 
-    logger.info('\n📊 Git Stats:')
-    logger.info(`Files changed: ${stagedDiff.stats.filesChanged}`)
-    logger.info(`Additions: ${stagedDiff.stats.additions}`)
-    logger.info(`Deletions: ${stagedDiff.stats.deletions}`)
-    logger.info(`Original length: ${stagedDiff.stats.originalLength}`)
-    logger.info(`Processed length: ${stagedDiff.stats.processedLength}`)
+    loggerService.info('\n📊 Git Stats:')
+    loggerService.info(`Files changed: ${stagedDiff.stats.filesChanged}`)
+    loggerService.info(`Additions: ${stagedDiff.stats.additions}`)
+    loggerService.info(`Deletions: ${stagedDiff.stats.deletions}`)
+    loggerService.info(`Original length: ${stagedDiff.stats.originalLength}`)
+    loggerService.info(`Processed length: ${stagedDiff.stats.processedLength}`)
 
-    logger.info('💭 Generating commit message...')
+    loggerService.info('💭 Generating commit message...')
     const message = await openai.generateCommitMessage(stagedDiff, userMessage)
 
     console.log('\n💡 Proposed commit message:')
@@ -231,7 +231,7 @@ export const createWorkflowService = (
       },
     ])
 
-    return uiService.handleAction(action, message, logger)
+    return uiService.handleAction(action, message, loggerService)
   }
 
   return {
@@ -240,7 +240,5 @@ export const createWorkflowService = (
   }
 }
 
-export const createWorkflow = (
-  config: Config,
-  logger: ReturnType<typeof createLogger>
-): WorkflowService => createWorkflowService(config, logger)
+export const createWorkflow = (config: Config): WorkflowService =>
+  createWorkflowService(config)

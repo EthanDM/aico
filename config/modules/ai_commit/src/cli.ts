@@ -2,6 +2,7 @@
 import chalk from 'chalk'
 import { programService } from './services/program.service'
 import { createWorkflow } from './services/workflow.service'
+import { loggerService } from './services/logger.service'
 
 /**
  * Main function to run the CLI.
@@ -10,8 +11,8 @@ import { createWorkflow } from './services/workflow.service'
  */
 const main = async (): Promise<void> => {
   try {
-    const { config, logger, options } = await programService.initialize()
-    const workflow = createWorkflow(config, logger)
+    const { config, options } = await programService.initialize()
+    const workflow = createWorkflow(config)
 
     const message = await workflow.generateCommitMessage(options.message)
     const result = await workflow.promptForAction(message)
@@ -22,10 +23,7 @@ const main = async (): Promise<void> => {
       process.exit(0)
     }
   } catch (error) {
-    console.error(
-      chalk.red('Error:'),
-      error instanceof Error ? error.message : error
-    )
+    loggerService.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
   }
 }
@@ -34,6 +32,6 @@ const main = async (): Promise<void> => {
  * Entry point for the CLI.
  */
 main().catch((error) => {
-  console.error(chalk.red('Fatal error:'), error)
+  loggerService.error('Fatal error: ' + String(error))
   process.exit(1)
 })
