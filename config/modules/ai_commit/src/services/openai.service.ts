@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { Config, ProcessedDiff, CommitMessage } from '../types'
 import { createLogger } from '../utils/logger'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
+import { gitService } from '../services/git.service'
 
 type OpenAIConfig = Config['openai']
 
@@ -37,10 +38,37 @@ export const createOpenAIService = (
    * @param diff - The diff to generate a commit message for.
    * @returns The prompt for the OpenAI API.
    */
-  const buildPrompt = (diff: ProcessedDiff): string => {
+  const buildPrompt = async (diff: ProcessedDiff): Promise<string> => {
     const parts = ['Generate a commit message for the following changes:']
 
-    // TOOD: add branch name, recent commits, etc.
+    // Add branch context
+    const branchName = await gitService.getBranchName()
+    parts.push(`\nCurrent branch: ${branchName}`)
+
+    if (debugConfig.enabled) {
+      logger.debug(`🔍 Current branch: ${branchName}`)
+    }
+
+    // Add recent commits context
+    const recentCommits = await gitService.getRecentCommits(5)
+    if (recentCommits.length > 0) {
+      parts.push('\nRecent commits:')
+      recentCommits.forEach((commit) => {
+        parts.push(
+          `${commit.hash} (${commit.date}): ${commit.message}${
+            commit.refs ? ` ${commit.refs}` : ''
+          }`
+        )
+      })
+    }
+
+    if (debugConfig.enabled) {
+      logger.debug('🔍 Recent commits:')
+      logger.debug(parts.join('\n'))
+    }
+
+    // Add diff information
+    parts.push('\nCurrent changes:')
     if (diff.stats.wasSummarized) {
       // For summarized diffs, include the summary and stats
       parts.push(diff.summary)
@@ -108,7 +136,7 @@ export const createOpenAIService = (
   const generateCommitMessage = async (
     diff: ProcessedDiff
   ): Promise<CommitMessage> => {
-    const prompt = buildPrompt(diff)
+    const prompt = await buildPrompt(diff)
 
     const messages: ChatCompletionMessageParam[] = [
       {
