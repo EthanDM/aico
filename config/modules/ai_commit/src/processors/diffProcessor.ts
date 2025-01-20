@@ -145,6 +145,7 @@ const createDiffProcessor = (): DiffProcessor => {
    * @returns A processed diff object
    */
   const processDiff = (rawDiff: string): ProcessedDiff => {
+    const CHARACTER_LIMIT = 20000
     const fileOperations = extractFileOperations(rawDiff)
     const functionChanges = extractFunctionChanges(rawDiff)
     const dependencyChanges = extractDependencyChanges(rawDiff)
@@ -166,7 +167,9 @@ const createDiffProcessor = (): DiffProcessor => {
       rawDiff,
     }
 
-    const summary = summarizeDiff(details)
+    // Use raw diff if under limit, otherwise use summary
+    const shouldSummarize = rawDiff.length > CHARACTER_LIMIT
+    const summary = shouldSummarize ? summarizeDiff(details) : rawDiff
 
     // Calculate stats
     const stats = {
@@ -175,7 +178,7 @@ const createDiffProcessor = (): DiffProcessor => {
       filesChanged: fileOperations.length,
       additions: additions.length,
       deletions: deletions.length,
-      wasSummarized: rawDiff.length > summary.length,
+      wasSummarized: shouldSummarize,
     }
 
     return {
