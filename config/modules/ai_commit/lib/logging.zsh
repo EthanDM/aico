@@ -60,10 +60,9 @@ function log_error() { log "ERROR" "$1"; }
 function log_api_response() {
     local response=$1
     local debug=${DEBUG_CONFIG[ENABLE_DEBUG]}
-    local log_responses=${DEBUG_CONFIG[LOG_API_RESPONSES]}
 
     # Show API responses in debug mode or if specifically enabled
-    if [[ "$debug" == "true" || "$log_responses" == "true" ]]; then
+    if [[ "$debug" == "true" ]]; then
         echo "\n${LOG_COLORS[DEBUG]}🔍 API Response Details:${LOG_COLORS[RESET]}" >&2
 
         # Clean control characters and escape sequences before processing

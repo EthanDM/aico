@@ -41,7 +41,6 @@ COMMIT_CONFIG=(
 typeset -A DEBUG_CONFIG
 DEBUG_CONFIG=(
     [ENABLE_DEBUG]=false        # Full debug mode
-    [LOG_API_RESPONSES]=false   # API response logging
     [LOG_LEVEL]=${LOG_LEVELS[INFO]}  # Default log level
 )
 

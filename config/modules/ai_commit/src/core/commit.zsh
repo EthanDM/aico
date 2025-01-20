@@ -139,7 +139,6 @@ function ai_commit_set_model() {
 function ai_commit() {
     # Parse options
     local debug=false       # Enable debug mode
-    local log_api=false     # Log API responses only
     local auto_stage=false  # Auto-stage all changes
     local skip_confirm=false  # Auto-accept generated message
     local verbose=false     # Verbose mode
@@ -150,7 +149,6 @@ function ai_commit() {
     while getopts "dlsavhp" opt; do
         case $opt in
             d) debug=true ;;      # Debug mode
-            l) log_api=true ;;    # Log API responses only
             s) auto_stage=true ;; # Auto-stage changes
             a) skip_confirm=true ;; # Skip confirmation
             v) verbose=true ;;    # Verbose mode
@@ -168,7 +166,6 @@ function ai_commit() {
         DEBUG_CONFIG[ENABLE_DEBUG]=false
         DEBUG_CONFIG[LOG_LEVEL]="INFO"
     fi
-    DEBUG_CONFIG[LOG_API_RESPONSES]=$log_api
 
     # Check environment and changes
     ai_commit_check_environment || return 1
