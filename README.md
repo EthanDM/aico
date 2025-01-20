@@ -1,6 +1,3 @@
-I'll help you create comprehensive documentation for ai-commit. Let's create a README.md file with installation, usage, and configuration instructions.
-
-````markdown:config/modules/ai_commit/README.md
 # ai-commit
 
 An AI-powered git commit message generator that creates conventional commit messages using OpenAI.
@@ -26,7 +23,7 @@ An AI-powered git commit message generator that creates conventional commit mess
 
 ```bash
 npm install -g ai-commit
-````
+```
 
 ### Local Installation
 
@@ -208,8 +205,4 @@ Make sure npm binaries are in your PATH:
 ```bash
 echo 'export PATH="$PATH:$(npm config get prefix)/bin"' >> ~/.zshrc
 source ~/.zshrc
-```
-
-```
-
 ```

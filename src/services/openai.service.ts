@@ -41,7 +41,7 @@ export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
       parts.push('\nUser suggested message:')
       parts.push(userMessage)
       parts.push(
-        '\nConsider the above message as guidance, but ensure the commit message accurately reflects the changes.'
+        '\nConsider the above message as guidance, but ensure the commit message accurately reflects the changes. Still add commit body if needed.'
       )
     }
 
