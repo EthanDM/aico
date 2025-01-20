@@ -231,7 +231,7 @@ export const createWorkflowService = (config: Config): WorkflowService => {
       },
     ])
 
-    return uiService.handleAction(action, message, loggerService)
+    return uiService.handleAction(action, message)
   }
 
   return {
