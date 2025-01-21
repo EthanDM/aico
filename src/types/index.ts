@@ -7,10 +7,10 @@ export const ConfigSchema = z.object({
   openai: z.object({
     apiKey: z.string(),
     model: z.string().default('gpt-4o-mini'),
-    maxTokens: z.number().default(300),
+    maxTokens: z.number().default(400),
     temperature: z.number().default(0.5),
     topP: z.number().default(1),
-    frequencyPenalty: z.number().default(0),
+    frequencyPenalty: z.number().default(0.2),
     presencePenalty: z.number().default(0),
   }),
   commit: z.object({
