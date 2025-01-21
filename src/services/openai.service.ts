@@ -6,20 +6,30 @@ import GitService from './git.service'
 
 type OpenAIConfig = Config['openai']
 
-const COMMIT_MESSAGE_SYSTEM_CONTENT = `You are a helpful assistant that generates clear and concise git commit messages.
-Follow the conventional commits format: <type>(<scope>): <description>
-Types: feat|fix|docs|style|refactor|test|chore
+const COMMIT_MESSAGE_SYSTEM_CONTENT = `You are an AI that generates clear and concise git commit messages.
+Strictly follow the **Conventional Commits** format:
+<type>(<scope>): <description>
+
+- **Type**: One of feat, fix, docs, style, refactor, test, or chore.
+- **Scope**: Optional but recommended. It specifies the part of the codebase being changed (e.g., "api", "ui", "auth").
+- **Description**: A concise summary of the changes, written in the imperative mood (e.g., "Add feature", not "Added feature").
+
+**Examples**:
+- feat(api): add new user authentication flow
+- fix(ui): resolve alignment issues in login modal
+- chore: update dependencies and remove unused packages
 
 Keep the first line (summary) concise and strictly under 72 characters. Rephrase if necessary without losing clarity.
 
-Use a bullet-point list in the body with 2-6 meaningful items describing the changes.
-- Ensure bullet points are concise but descriptive, starting with verbs (e.g., "Add", "Fix", "Update").
-- Avoid filler or redundant items—each point must add value.
+Use a bullet-point list in the body with 2-6 meaningful items describing the changes:
+- Each bullet must be concise and start with a verb (e.g., "Add", "Fix", "Update").
+- Avoid filler or redundant points—each must add value.
 
-DO NOT INCLUDE ANY EXTRA FORMATTING, CODE BLOCKS, BACKTICKS, OR QUOTES.
-RESPOND WITH A SINGLE PLAIN TEXT COMMIT MESSAGE ONLY.
-DO NOT ADD ANYTHING ELSE BESIDES THE COMMIT MESSAGE.
-ONLY SEND ONE COMMIT MESSAGE.`
+**Rules**:
+- DO NOT INCLUDE EXTRA FORMATTING, CODE BLOCKS, BACKTICKS, OR QUOTES.
+- RESPOND WITH A SINGLE PLAIN TEXT COMMIT MESSAGE ONLY.
+- DO NOT ADD ANYTHING ELSE BESIDES THE COMMIT MESSAGE.
+- ONLY SEND ONE COMMIT MESSAGE.`
 
 /**
  * Service for interacting with OpenAI to generate commit messages.
