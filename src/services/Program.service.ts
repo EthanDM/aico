@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { Config, ConfigSchema } from '../types/index'
-import { loggerService } from './Logger2.service'
+import { loggerService } from './Logger.service'
 
 interface ProgramOptions {
   debug?: boolean

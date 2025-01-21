@@ -1,8 +1,8 @@
 import OpenAI from 'openai'
 import { Config, ProcessedDiff, CommitMessage, OpenAIService } from '../types'
-import { loggerService } from './Logger2.service'
+import { loggerService } from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
-import GitService from './Git2.service'
+import GitService from './Git.service'
 
 type OpenAIConfig = Config['openai']
 

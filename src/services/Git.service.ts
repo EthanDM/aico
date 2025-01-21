@@ -1,5 +1,5 @@
 import { simpleGit, SimpleGit } from 'simple-git'
-import DiffProcessor from '../processors/diffProcessor'
+import DiffProcessor from '../processors/Diff.processor'
 import { ProcessedDiff, CommitMessage } from '../types'
 
 interface GitCommit {
