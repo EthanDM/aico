@@ -5,17 +5,10 @@ import GitService from './Git.service'
 import { uiService } from './UI.service'
 import { loggerService } from './Logger.service'
 
-interface WorkflowService {
-  generateCommitMessage: (userMessage?: string) => Promise<CommitMessage>
-  promptForAction: (
-    message: CommitMessage
-  ) => Promise<'exit' | 'restart' | void>
-}
-
 /**
  * Service for handling the commit message generation workflow.
  */
-class WorkflowServiceImpl implements WorkflowService {
+class WorkflowService {
   private openai
 
   constructor(config: Config) {
@@ -251,4 +244,4 @@ class WorkflowServiceImpl implements WorkflowService {
  * @returns A workflow service instance
  */
 export const createWorkflow = (config: Config): WorkflowService =>
-  new WorkflowServiceImpl(config)
+  new WorkflowService(config)

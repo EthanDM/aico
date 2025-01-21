@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { Config, ProcessedDiff, CommitMessage, OpenAIService } from '../types'
+import { Config, ProcessedDiff, CommitMessage } from '../types'
 import { loggerService } from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import GitService from './Git.service'
@@ -10,7 +10,7 @@ type OpenAIConfig = Config['openai']
 /**
  * Service for interacting with OpenAI to generate commit messages.
  */
-class OpenAIServiceImpl implements OpenAIService {
+class OpenAIService {
   private client: OpenAI
   private config: OpenAIConfig
 
@@ -193,5 +193,5 @@ class OpenAIServiceImpl implements OpenAIService {
  * @returns An OpenAI service instance
  */
 export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
-  return new OpenAIServiceImpl(config)
+  return new OpenAIService(config)
 }

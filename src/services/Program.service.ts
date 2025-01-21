@@ -8,13 +8,6 @@ interface ProgramOptions {
   message?: string
 }
 
-interface ProgramService {
-  initialize: () => Promise<{
-    config: Config
-    options: ProgramOptions
-  }>
-}
-
 /**
  * Default configuration for the program.
  */
@@ -44,7 +37,7 @@ const defaultConfig: Config = {
 /**
  * Service for handling CLI program setup and configuration.
  */
-class ProgramServiceImpl implements ProgramService {
+class ProgramService {
   private program: Command
 
   constructor() {
@@ -110,4 +103,4 @@ class ProgramServiceImpl implements ProgramService {
 }
 
 // Export a single instance
-export const programService = new ProgramServiceImpl()
+export const programService = new ProgramService()

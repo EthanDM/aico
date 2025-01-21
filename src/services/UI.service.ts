@@ -2,17 +2,10 @@ import { CommitMessage } from '../types'
 import { loggerService } from './Logger.service'
 import GitService from './Git.service'
 
-interface UIService {
-  handleAction: (
-    action: string,
-    message: CommitMessage
-  ) => Promise<'exit' | 'restart' | void>
-}
-
 /**
  * Service for handling user interactions and UI actions.
  */
-class UIServiceImpl implements UIService {
+class UIService {
   /**
    * Handles the user's action choice.
    *
@@ -73,4 +66,4 @@ class UIServiceImpl implements UIService {
 }
 
 // Export a single instance
-export const uiService = new UIServiceImpl()
+export const uiService = new UIService()
