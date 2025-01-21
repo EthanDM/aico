@@ -1,6 +1,6 @@
 import { simpleGit, SimpleGit } from 'simple-git'
-import { ProcessedDiff, CommitMessage } from '../types'
 import DiffProcessor from '../processors/diffProcessor'
+import { ProcessedDiff, CommitMessage } from '../types'
 
 interface GitCommit {
   hash: string
@@ -15,23 +15,10 @@ interface GitStatus {
   modified: string[]
 }
 
-interface GitService {
-  getStagedChanges(): Promise<ProcessedDiff>
-  getAllChanges(): Promise<ProcessedDiff>
-  getStatus(): Promise<GitStatus>
-  getShortStatus(): Promise<string>
-  getBranchName(): Promise<string>
-  getRecentCommits(count?: number): Promise<GitCommit[]>
-  commit(message: CommitMessage | string): Promise<void>
-  hasChanges(): Promise<boolean>
-  hasStaged(): Promise<boolean>
-  stageAll(): Promise<void>
-}
-
 /**
  * Service for interacting with Git repository and managing version control operations.
  */
-class GitService implements GitService {
+class GitService {
   private git: SimpleGit
 
   constructor() {
