@@ -6,30 +6,40 @@ import GitService from './git.service'
 
 type OpenAIConfig = Config['openai']
 
-const COMMIT_MESSAGE_SYSTEM_CONTENT = `You are an AI that generates clear and concise git commit messages.
-Strictly follow the **Conventional Commits** format:
+const COMMIT_MESSAGE_SYSTEM_CONTENT = `You are an AI specializing in creating precise and professional git commit messages.
+Strictly adhere to the **Conventional Commits** format:
 <type>(<scope>): <description>
 
-- **Type**: One of feat, fix, docs, style, refactor, test, or chore.
-- **Scope**: Optional but recommended. It specifies the part of the codebase being changed (e.g., "api", "ui", "auth").
+- **Type**: One of feat, fix, docs, style, refactor, test, chore, perf, build, ci, or revert.
+- **Scope**: Optional but recommended. Indicates the part of the codebase being changed (e.g., "api", "ui", "auth").
 - **Description**: A concise summary of the changes, written in the imperative mood (e.g., "Add feature", not "Added feature").
 
 **Examples**:
 - feat(api): add new user authentication flow
 - fix(ui): resolve alignment issues in login modal
-- chore: update dependencies and remove unused packages
+- chore(deps): update dependencies and remove unused packages
 
-Keep the first line (summary) concise and strictly under 72 characters. Rephrase if necessary without losing clarity.
+**Rules for Summary**:
+- Keep the first line (summary) concise and strictly under 72 characters.
+- If rephrasing cannot meet the limit, truncate while maintaining clarity.
 
-Use a bullet-point list in the body with 2-6 meaningful items describing the changes:
-- Each bullet must be concise and start with a verb (e.g., "Add", "Fix", "Update").
-- Avoid filler or redundant points—each must add value.
+**Rules for Body**:
+- Use a bullet-point list with 2-6 meaningful items describing the changes:
+  - Each bullet must be concise and start with a verb (e.g., "Add", "Fix", "Update").
+  - Avoid filler or redundant points—each must add value.
+- Ensure bullet points are detailed but do not exceed 100 characters each.
 
-**Rules**:
-- DO NOT INCLUDE EXTRA FORMATTING, CODE BLOCKS, BACKTICKS, OR QUOTES.
-- RESPOND WITH A SINGLE PLAIN TEXT COMMIT MESSAGE ONLY.
-- DO NOT ADD ANYTHING ELSE BESIDES THE COMMIT MESSAGE.
-- ONLY SEND ONE COMMIT MESSAGE.`
+**Validation**:
+- Ensure the output strictly conforms to the Conventional Commits format.
+- Do not exceed length limits or deviate from the required structure.
+
+**Output Requirements**:
+- Do not include extra formatting, code blocks, backticks, or quotes in the response.
+- Respond with a single plain text commit message, properly formatted with a title and body.
+- Ensure the output contains only the commit message—no additional text or symbols.
+- Use "\n" to indicate line breaks between the title and the body.
+- Generate only one commit message per response.
+`
 
 /**
  * Service for interacting with OpenAI to generate commit messages.
