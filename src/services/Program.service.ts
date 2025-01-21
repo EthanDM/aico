@@ -2,6 +2,8 @@ import { Command } from 'commander'
 import { Config, ConfigSchema } from '../types/index'
 import LoggerService from './Logger.service'
 import AppLogService from './AppLog.service'
+import chalk from 'chalk'
+import figlet from 'figlet'
 
 export interface ProgramOptions {
   debug?: boolean
@@ -55,14 +57,37 @@ class ProgramService {
     config: Config
     options: ProgramOptions
   }> {
+    // Add the fun banner
+    console.log(
+      chalk.blue(
+        figlet.textSync('AICO', {
+          horizontalLayout: 'default',
+          verticalLayout: 'default',
+        })
+      )
+    )
+    const tagline = [
+      'Supercharge your commits 🚀',
+      'Effortless commits, powered by AI 🤖',
+      'Write less, commit more 🎉',
+    ][Math.floor(Math.random() * 3)]
+
+    console.log(chalk.cyanBright(tagline))
+
+    console.log(chalk.gray('Your AI-powered git commit assistant\n'))
+
     // Parse command line arguments
     this.program
       .name('aico')
-      .description('AI-powered git commit message generator')
+      .description(chalk.green('AI-powered git commit message generator'))
       .version('1.0.0')
-      .option('-d, --debug', 'enable debug mode')
-      .option('-4, --gpt4', 'use GPT-4 model')
-      .option('-m, --message <message>', 'Provide a message to guide the AI')
+      .option('-d, --debug', chalk.yellow('enable debug mode'))
+      .option('-4, --gpt4', chalk.yellow('use GPT-4 model'))
+      .option(
+        '-m, --message <message>',
+        chalk.yellow('Provide a message to guide the AI')
+      )
+      .parse(process.argv)
 
     this.program.parse(process.argv)
     const options = this.program.opts<ProgramOptions>()
