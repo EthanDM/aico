@@ -2,16 +2,23 @@ import OpenAI from 'openai'
 import { Config, ProcessedDiff, CommitMessage, OpenAIService } from '../types'
 import { loggerService } from './logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
-import { gitService } from './git.service'
+import GitService from './git.service'
 
 type OpenAIConfig = Config['openai']
 
 const COMMIT_MESSAGE_SYSTEM_CONTENT = `You are a helpful assistant that generates clear and concise git commit messages.
 Follow the conventional commits format: <type>(<scope>): <description>
 Types: feat|fix|docs|style|refactor|test|chore
-Keep the first line under 72 characters.
-Use bullet points for the body (at least 2).
-DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.
+
+Keep the first line (summary) concise and strictly under 72 characters. Rephrase if necessary without losing clarity.
+
+Use a bullet-point list in the body with 2-6 meaningful items describing the changes.
+- Ensure bullet points are concise but descriptive, starting with verbs (e.g., "Add", "Fix", "Update").
+- Avoid filler or redundant items—each point must add value.
+
+DO NOT INCLUDE ANY EXTRA FORMATTING, CODE BLOCKS, BACKTICKS, OR QUOTES.
+RESPOND WITH A SINGLE PLAIN TEXT COMMIT MESSAGE ONLY.
+DO NOT ADD ANYTHING ELSE BESIDES THE COMMIT MESSAGE.
 ONLY SEND ONE COMMIT MESSAGE.`
 
 /**
@@ -49,13 +56,13 @@ class OpenAIServiceImpl implements OpenAIService {
     }
 
     // Add branch context
-    const branchName = await gitService.getBranchName()
+    const branchName = await GitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
 
     loggerService.debug(`🔍 Current branch: ${branchName}`)
 
     // Add recent commits context
-    const recentCommits = await gitService.getRecentCommits(5)
+    const recentCommits = await GitService.getRecentCommits(5)
     if (recentCommits.length > 0) {
       parts.push('\nRecent commits:')
       recentCommits.forEach((commit) => {
