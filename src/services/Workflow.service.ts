@@ -4,6 +4,7 @@ import { createOpenAIService } from './OpenAI.service'
 import GitService from './Git.service'
 import { uiService } from './UI.service'
 import LoggerService from './Logger.service'
+import AppLogService from './AppLog.service'
 
 /**
  * Service for handling the commit message generation workflow.
@@ -13,49 +14,6 @@ class WorkflowService {
 
   constructor(config: Config) {
     this.openai = createOpenAIService(config.openai)
-  }
-
-  /**
-   * Logs debug information about the diff.
-   *
-   * @param diff - The processed diff information.
-   */
-  private logDebugDiff(diff: ProcessedDiff): void {
-    LoggerService.debug('\n📊 Git Stats:')
-    LoggerService.debug(`Files changed: ${diff.stats.filesChanged}`)
-    LoggerService.debug(`Additions: ${diff.stats.additions}`)
-    LoggerService.debug(`Deletions: ${diff.stats.deletions}`)
-    if (diff.stats.wasSummarized) {
-      LoggerService.debug('(Diff was summarized due to size)')
-      LoggerService.debug(`Original length: ${diff.stats.originalLength}`)
-      LoggerService.debug(`Processed length: ${diff.stats.processedLength}`)
-    }
-
-    LoggerService.debug('\n📝 Changes:')
-    if (diff.details.fileOperations.length > 0) {
-      LoggerService.debug('\nFile Operations:')
-      diff.details.fileOperations.forEach((op) =>
-        LoggerService.debug(`  ${op}`)
-      )
-    }
-    if (diff.details.functionChanges.length > 0) {
-      LoggerService.debug('\nFunction Changes:')
-      diff.details.functionChanges.forEach((change) =>
-        LoggerService.debug(`  ${change}`)
-      )
-    }
-    if (diff.details.dependencyChanges.length > 0) {
-      LoggerService.debug('\nDependency Changes:')
-      diff.details.dependencyChanges.forEach((dep) =>
-        LoggerService.debug(`  ${dep}`)
-      )
-    }
-
-    LoggerService.debug('\n📄 Raw Diff:')
-    LoggerService.debug(diff.details.rawDiff)
-
-    LoggerService.debug('\n📝 Summary:')
-    LoggerService.debug(diff.summary)
   }
 
   /**
@@ -183,27 +141,17 @@ class WorkflowService {
       }
     }
 
-    // Log detailed diff information in debug mode
-    this.logDebugDiff(stagedDiff)
+    AppLogService.debugGitDiff(stagedDiff)
+    AppLogService.gitStats(stagedDiff)
 
-    LoggerService.info('\n📊 Git Stats:')
-    LoggerService.info(`Files changed: ${stagedDiff.stats.filesChanged}`)
-    LoggerService.info(`Additions: ${stagedDiff.stats.additions}`)
-    LoggerService.info(`Deletions: ${stagedDiff.stats.deletions}`)
-    LoggerService.info(`Original length: ${stagedDiff.stats.originalLength}`)
-    LoggerService.info(`Processed length: ${stagedDiff.stats.processedLength}`)
+    AppLogService.generatingCommitMessage()
 
-    LoggerService.info('💭 Generating commit message...')
     const message = await this.openai.generateCommitMessage(
       stagedDiff,
       userMessage
     )
 
-    console.log('\n💡 Proposed commit message:')
-    console.log(chalk.green(message.title))
-    if (message.body) {
-      console.log('\n' + message.body)
-    }
+    AppLogService.commitMessageGenerated(message)
 
     return message
   }
