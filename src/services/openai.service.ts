@@ -15,13 +15,16 @@ DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.
 ONLY SEND ONE COMMIT MESSAGE.`
 
 /**
- * Creates an OpenAIService instance.
- *
- * @param config - The OpenAI configuration.
- * @returns An instance of the OpenAIService.
+ * Service for interacting with OpenAI to generate commit messages.
  */
-export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
-  const client = new OpenAI({ apiKey: config.apiKey })
+class OpenAIServiceImpl implements OpenAIService {
+  private client: OpenAI
+  private config: OpenAIConfig
+
+  constructor(config: OpenAIConfig) {
+    this.config = config
+    this.client = new OpenAI({ apiKey: config.apiKey })
+  }
 
   /**
    * Builds the prompt for the OpenAI API.
@@ -30,10 +33,10 @@ export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
    * @param userMessage - Optional user-provided message for guidance.
    * @returns The prompt for the OpenAI API.
    */
-  const buildPrompt = async (
+  private async buildPrompt(
     diff: ProcessedDiff,
     userMessage?: string
-  ): Promise<string> => {
+  ): Promise<string> {
     const parts = ['Generate a commit message for the following changes:']
 
     // Add user guidance if provided
@@ -90,7 +93,7 @@ export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
    * @param content - The content of the OpenAI response.
    * @returns The commit message.
    */
-  const parseCommitMessage = (content: string): CommitMessage => {
+  private parseCommitMessage(content: string): CommitMessage {
     const lines = content.trim().split('\n')
     const title = lines[0].trim()
 
@@ -134,11 +137,11 @@ export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
    * @param userMessage - Optional user-provided message for guidance.
    * @returns The commit message.
    */
-  const generateCommitMessage = async (
+  public async generateCommitMessage(
     diff: ProcessedDiff,
     userMessage?: string
-  ): Promise<CommitMessage> => {
-    const prompt = await buildPrompt(diff, userMessage)
+  ): Promise<CommitMessage> {
+    const prompt = await this.buildPrompt(diff, userMessage)
 
     const messages: ChatCompletionMessageParam[] = [
       {
@@ -156,26 +159,24 @@ export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
     ]
 
     loggerService.debug('\n🔍 Building OpenAI Request:')
-    loggerService.debug(`Model: ${config.model}`)
-    loggerService.debug(`Max Tokens: ${config.maxTokens}`)
-    loggerService.debug(`Temperature: ${config.temperature}`)
+    loggerService.debug(`Model: ${this.config.model}`)
+    loggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
+    loggerService.debug(`Temperature: ${this.config.temperature}`)
     loggerService.debug('Messages:')
     loggerService.debug(`system: ${messages[0].content}`)
     // Skip logging the full diff since it's already logged in workflow
     loggerService.debug('user: <diff content omitted>')
 
-    // loggerService.debug(`user: ${messages[1].content}`)
-
     loggerService.debug('\n📤 Sending request to OpenAI...')
 
-    const response = await client.chat.completions.create({
-      model: config.model,
+    const response = await this.client.chat.completions.create({
+      model: this.config.model,
       messages,
-      max_tokens: config.maxTokens,
-      temperature: config.temperature,
-      top_p: config.topP,
-      frequency_penalty: config.frequencyPenalty,
-      presence_penalty: config.presencePenalty,
+      max_tokens: this.config.maxTokens,
+      temperature: this.config.temperature,
+      top_p: this.config.topP,
+      frequency_penalty: this.config.frequencyPenalty,
+      presence_penalty: this.config.presencePenalty,
     })
 
     loggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
@@ -188,15 +189,16 @@ export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
       throw new Error('No commit message generated')
     }
 
-    return parseCommitMessage(content)
+    return this.parseCommitMessage(content)
   }
+}
 
-  /**
-   * Returns the OpenAIService instance.
-   *
-   * @returns The OpenAIService instance.
-   */
-  return {
-    generateCommitMessage,
-  }
+/**
+ * Creates and exports a new OpenAI service instance.
+ *
+ * @param config - The OpenAI configuration
+ * @returns An OpenAI service instance
+ */
+export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
+  return new OpenAIServiceImpl(config)
 }
