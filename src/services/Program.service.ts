@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { Config, ConfigSchema } from '../types/index'
-import { loggerService } from './Logger.service'
+import LoggerService from './Logger.service'
 
 interface ProgramOptions {
   debug?: boolean
@@ -87,16 +87,16 @@ class ProgramService {
       })
 
       // Configure logger
-      loggerService.setConfig(config.debug)
+      LoggerService.setConfig(config.debug)
 
       // Log initial debug information
-      loggerService.debug('🔧 Debug mode enabled')
-      loggerService.debug('Options: ' + JSON.stringify(options, null, 2))
-      loggerService.debug('Config: ' + JSON.stringify(config, null, 2))
+      LoggerService.debug('🔧 Debug mode enabled')
+      LoggerService.debug('Options: ' + JSON.stringify(options, null, 2))
+      LoggerService.debug('Config: ' + JSON.stringify(config, null, 2))
 
       return { config, options }
     } catch (error) {
-      loggerService.error('Failed to parse config: ' + String(error))
+      LoggerService.error('Failed to parse config: ' + String(error))
       throw error
     }
   }

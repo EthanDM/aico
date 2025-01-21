@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import { Config, ProcessedDiff, CommitMessage } from '../types'
-import { loggerService } from './Logger.service'
+import LoggerService from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import GitService from './Git.service'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
@@ -45,7 +45,7 @@ class OpenAIService {
     const branchName = await GitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
 
-    loggerService.debug(`🔍 Current branch: ${branchName}`)
+    LoggerService.debug(`🔍 Current branch: ${branchName}`)
 
     // Add recent commits context
     const recentCommits = await GitService.getRecentCommits(5)
@@ -60,8 +60,8 @@ class OpenAIService {
       })
     }
 
-    loggerService.debug('🔍 Recent commits:')
-    loggerService.debug(parts.join('\n'))
+    LoggerService.debug('🔍 Recent commits:')
+    LoggerService.debug(parts.join('\n'))
 
     // Add diff information
     parts.push('\nCurrent changes:')
@@ -151,16 +151,16 @@ class OpenAIService {
       },
     ]
 
-    loggerService.debug('\n🔍 Building OpenAI Request:')
-    loggerService.debug(`Model: ${this.config.model}`)
-    loggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
-    loggerService.debug(`Temperature: ${this.config.temperature}`)
-    loggerService.debug('Messages:')
-    loggerService.debug(`system: ${messages[0].content}`)
+    LoggerService.debug('\n🔍 Building OpenAI Request:')
+    LoggerService.debug(`Model: ${this.config.model}`)
+    LoggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
+    LoggerService.debug(`Temperature: ${this.config.temperature}`)
+    LoggerService.debug('Messages:')
+    LoggerService.debug(`system: ${messages[0].content}`)
     // Skip logging the full diff since it's already logged in workflow
-    loggerService.debug('user: <diff content omitted>')
+    LoggerService.debug('user: <diff content omitted>')
 
-    loggerService.debug('\n📤 Sending request to OpenAI...')
+    LoggerService.debug('\n📤 Sending request to OpenAI...')
 
     const response = await this.client.chat.completions.create({
       model: this.config.model,
@@ -172,10 +172,10 @@ class OpenAIService {
       presence_penalty: this.config.presencePenalty,
     })
 
-    loggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
+    LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
 
-    loggerService.debug('\n📥 Received response from OpenAI:')
-    loggerService.debug(JSON.stringify(response, null, 2))
+    LoggerService.debug('\n📥 Received response from OpenAI:')
+    LoggerService.debug(JSON.stringify(response, null, 2))
 
     const content = response.choices[0]?.message?.content
     if (!content) {

@@ -1,5 +1,5 @@
 import { CommitMessage } from '../types'
-import { loggerService } from './Logger.service'
+import LoggerService from './Logger.service'
 import GitService from './Git.service'
 
 /**
@@ -20,7 +20,7 @@ class UIService {
     switch (action) {
       case 'accept':
         await GitService.commit(message)
-        loggerService.info('✅ Commit created successfully!')
+        LoggerService.info('✅ Commit created successfully!')
         return
 
       case 'edit': {
@@ -41,7 +41,7 @@ class UIService {
         const body = lines.slice(2).join('\n')
 
         await GitService.commit({ title, body })
-        loggerService.info('✅ Commit created successfully!')
+        LoggerService.info('✅ Commit created successfully!')
         return
       }
 
@@ -55,11 +55,11 @@ class UIService {
         return this.handleAction(action, message)
 
       case 'cancel':
-        loggerService.info('👋 Operation cancelled')
+        LoggerService.info('👋 Operation cancelled')
         return 'exit'
 
       default:
-        loggerService.error(`Unknown action: ${action}`)
+        LoggerService.error(`Unknown action: ${action}`)
         return 'exit'
     }
   }

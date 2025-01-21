@@ -3,7 +3,7 @@ import { Config, CommitMessage, ProcessedDiff } from '../types'
 import { createOpenAIService } from './OpenAI.service'
 import GitService from './Git.service'
 import { uiService } from './UI.service'
-import { loggerService } from './Logger.service'
+import LoggerService from './Logger.service'
 
 /**
  * Service for handling the commit message generation workflow.
@@ -21,41 +21,41 @@ class WorkflowService {
    * @param diff - The processed diff information.
    */
   private logDebugDiff(diff: ProcessedDiff): void {
-    loggerService.debug('\n📊 Git Stats:')
-    loggerService.debug(`Files changed: ${diff.stats.filesChanged}`)
-    loggerService.debug(`Additions: ${diff.stats.additions}`)
-    loggerService.debug(`Deletions: ${diff.stats.deletions}`)
+    LoggerService.debug('\n📊 Git Stats:')
+    LoggerService.debug(`Files changed: ${diff.stats.filesChanged}`)
+    LoggerService.debug(`Additions: ${diff.stats.additions}`)
+    LoggerService.debug(`Deletions: ${diff.stats.deletions}`)
     if (diff.stats.wasSummarized) {
-      loggerService.debug('(Diff was summarized due to size)')
-      loggerService.debug(`Original length: ${diff.stats.originalLength}`)
-      loggerService.debug(`Processed length: ${diff.stats.processedLength}`)
+      LoggerService.debug('(Diff was summarized due to size)')
+      LoggerService.debug(`Original length: ${diff.stats.originalLength}`)
+      LoggerService.debug(`Processed length: ${diff.stats.processedLength}`)
     }
 
-    loggerService.debug('\n📝 Changes:')
+    LoggerService.debug('\n📝 Changes:')
     if (diff.details.fileOperations.length > 0) {
-      loggerService.debug('\nFile Operations:')
+      LoggerService.debug('\nFile Operations:')
       diff.details.fileOperations.forEach((op) =>
-        loggerService.debug(`  ${op}`)
+        LoggerService.debug(`  ${op}`)
       )
     }
     if (diff.details.functionChanges.length > 0) {
-      loggerService.debug('\nFunction Changes:')
+      LoggerService.debug('\nFunction Changes:')
       diff.details.functionChanges.forEach((change) =>
-        loggerService.debug(`  ${change}`)
+        LoggerService.debug(`  ${change}`)
       )
     }
     if (diff.details.dependencyChanges.length > 0) {
-      loggerService.debug('\nDependency Changes:')
+      LoggerService.debug('\nDependency Changes:')
       diff.details.dependencyChanges.forEach((dep) =>
-        loggerService.debug(`  ${dep}`)
+        LoggerService.debug(`  ${dep}`)
       )
     }
 
-    loggerService.debug('\n📄 Raw Diff:')
-    loggerService.debug(diff.details.rawDiff)
+    LoggerService.debug('\n📄 Raw Diff:')
+    LoggerService.debug(diff.details.rawDiff)
 
-    loggerService.debug('\n📝 Summary:')
-    loggerService.debug(diff.summary)
+    LoggerService.debug('\n📝 Summary:')
+    LoggerService.debug(diff.summary)
   }
 
   /**
@@ -67,9 +67,9 @@ class WorkflowService {
     stagedCount: number,
     totalCount: number
   ): Promise<boolean> {
-    loggerService.warn('⚠️  Some changes are not staged for commit')
-    loggerService.info('   Staged: ' + chalk.green(`${stagedCount} files`))
-    loggerService.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
+    LoggerService.warn('⚠️  Some changes are not staged for commit')
+    LoggerService.info('   Staged: ' + chalk.green(`${stagedCount} files`))
+    LoggerService.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
 
     // Show status before prompting
     const status = await GitService.getShortStatus()
@@ -113,10 +113,10 @@ class WorkflowService {
   public async generateCommitMessage(
     userMessage?: string
   ): Promise<CommitMessage> {
-    loggerService.info('🔍 Analyzing changes...')
+    LoggerService.info('🔍 Analyzing changes...')
 
     if (userMessage) {
-      loggerService.debug(`\n💬 User provided message: ${userMessage}`)
+      LoggerService.debug(`\n💬 User provided message: ${userMessage}`)
     }
 
     // Check both staged and all changes
@@ -125,9 +125,9 @@ class WorkflowService {
       GitService.hasChanges(),
     ])
 
-    loggerService.debug('\n📋 Git Status:')
-    loggerService.debug(`Has staged changes: ${hasStaged}`)
-    loggerService.debug(`Has working changes: ${hasChanges}`)
+    LoggerService.debug('\n📋 Git Status:')
+    LoggerService.debug(`Has staged changes: ${hasStaged}`)
+    LoggerService.debug(`Has working changes: ${hasChanges}`)
 
     // Handle different staging states
     if (!hasChanges) {
@@ -135,7 +135,7 @@ class WorkflowService {
     }
 
     if (!hasStaged) {
-      loggerService.warn('No changes are currently staged for commit')
+      LoggerService.warn('No changes are currently staged for commit')
 
       // Show status before prompting
       const status = await GitService.getShortStatus()
@@ -186,14 +186,14 @@ class WorkflowService {
     // Log detailed diff information in debug mode
     this.logDebugDiff(stagedDiff)
 
-    loggerService.info('\n📊 Git Stats:')
-    loggerService.info(`Files changed: ${stagedDiff.stats.filesChanged}`)
-    loggerService.info(`Additions: ${stagedDiff.stats.additions}`)
-    loggerService.info(`Deletions: ${stagedDiff.stats.deletions}`)
-    loggerService.info(`Original length: ${stagedDiff.stats.originalLength}`)
-    loggerService.info(`Processed length: ${stagedDiff.stats.processedLength}`)
+    LoggerService.info('\n📊 Git Stats:')
+    LoggerService.info(`Files changed: ${stagedDiff.stats.filesChanged}`)
+    LoggerService.info(`Additions: ${stagedDiff.stats.additions}`)
+    LoggerService.info(`Deletions: ${stagedDiff.stats.deletions}`)
+    LoggerService.info(`Original length: ${stagedDiff.stats.originalLength}`)
+    LoggerService.info(`Processed length: ${stagedDiff.stats.processedLength}`)
 
-    loggerService.info('💭 Generating commit message...')
+    LoggerService.info('💭 Generating commit message...')
     const message = await this.openai.generateCommitMessage(
       stagedDiff,
       userMessage

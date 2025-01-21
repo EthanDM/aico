@@ -82,5 +82,4 @@ class LoggerService {
   }
 }
 
-// Export a single instance
-export const loggerService = new LoggerService()
+export default new LoggerService()

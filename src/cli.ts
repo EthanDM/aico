@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { programService } from './services/Program.service'
 import { createWorkflow } from './services/Workflow.service'
-import { loggerService } from './services/Logger.service'
+import LoggerService from './services/Logger.service'
 
 /**
  * Main function to run the CLI.
@@ -22,7 +22,7 @@ const main = async (): Promise<void> => {
       process.exit(0)
     }
   } catch (error) {
-    loggerService.error(error instanceof Error ? error.message : String(error))
+    LoggerService.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
   }
 }
@@ -31,6 +31,6 @@ const main = async (): Promise<void> => {
  * Entry point for the CLI.
  */
 main().catch((error) => {
-  loggerService.error('Fatal error: ' + String(error))
+  LoggerService.error('Fatal error: ' + String(error))
   process.exit(1)
 })
