@@ -10,11 +10,9 @@ interface UIService {
 }
 
 /**
- * Creates a UI service to handle user interactions.
- *
- * @returns An instance of the UIService.
+ * Service for handling user interactions and UI actions.
  */
-const createUIService = (): UIService => {
+class UIServiceImpl implements UIService {
   /**
    * Handles the user's action choice.
    *
@@ -22,10 +20,10 @@ const createUIService = (): UIService => {
    * @param message - The commit message to work with.
    * @returns The result of the action ('exit', 'restart', or void).
    */
-  const handleAction = async (
+  public async handleAction(
     action: string,
     message: CommitMessage
-  ): Promise<'exit' | 'restart' | void> => {
+  ): Promise<'exit' | 'restart' | void> {
     switch (action) {
       case 'accept':
         await gitService.commit(message)
@@ -61,7 +59,7 @@ const createUIService = (): UIService => {
         const diff = await gitService.getStagedChanges()
         console.log('\nFull diff:')
         console.log(diff.summary)
-        return handleAction(action, message)
+        return this.handleAction(action, message)
 
       case 'cancel':
         loggerService.info('👋 Operation cancelled')
@@ -72,11 +70,7 @@ const createUIService = (): UIService => {
         return 'exit'
     }
   }
-
-  return {
-    handleAction,
-  }
 }
 
 // Export a single instance
-export const uiService = createUIService()
+export const uiService = new UIServiceImpl()
