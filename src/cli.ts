@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { programService } from './services/program.service'
-import { createWorkflow } from './services/workflow.service'
-import { loggerService } from './services/logger.service'
+import { programService } from './services/Program2.service'
+import { createWorkflow } from './services/Workflow2.service'
+import { loggerService } from './services/Logger2.service'
 
 /**
  * Main function to run the CLI.

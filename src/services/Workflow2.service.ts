@@ -1,9 +1,9 @@
 import chalk from 'chalk'
 import { Config, CommitMessage, ProcessedDiff } from '../types'
-import { createOpenAIService } from './openai.service'
-import GitService from './git.service'
-import { uiService } from './ui.service'
-import { loggerService } from './logger.service'
+import { createOpenAIService } from './OpenAI2.service'
+import GitService from './Git2.service'
+import { uiService } from './UI2.service'
+import { loggerService } from './Logger2.service'
 
 interface WorkflowService {
   generateCommitMessage: (userMessage?: string) => Promise<CommitMessage>

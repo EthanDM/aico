@@ -1,6 +1,6 @@
 import { CommitMessage } from '../types'
-import { loggerService } from './logger.service'
-import GitService from './git.service'
+import { loggerService } from './Logger2.service'
+import GitService from './Git2.service'
 
 interface UIService {
   handleAction: (

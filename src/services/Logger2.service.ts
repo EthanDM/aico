@@ -1,18 +1,10 @@
 import chalk from 'chalk'
 import { Config, LogLevel } from '../types'
 
-interface LoggerService {
-  debug: (message: string) => void
-  info: (message: string) => void
-  warn: (message: string) => void
-  error: (message: string) => void
-  setConfig: (config: Config['debug']) => void
-}
-
 /**
  * Service for handling application logging with different log levels and formatting.
  */
-class LoggerServiceImpl implements LoggerService {
+class LoggerService {
   private config: Config['debug'] = {
     enabled: false,
     logLevel: 'INFO',
@@ -91,4 +83,4 @@ class LoggerServiceImpl implements LoggerService {
 }
 
 // Export a single instance
-export const loggerService = new LoggerServiceImpl()
+export const loggerService = new LoggerService()
