@@ -29,20 +29,22 @@ interface GitService {
 }
 
 /**
- * Creates a GitService instance.
- *
- * @returns An instance of the GitService.
+ * Service for interacting with Git repository and managing version control operations.
  */
-const createGitService = (): GitService => {
-  const git: SimpleGit = simpleGit()
+class GitServiceImpl implements GitService {
+  private git: SimpleGit
+
+  constructor() {
+    this.git = simpleGit()
+  }
 
   /**
    * Gets the current branch name.
    *
    * @returns The current branch name.
    */
-  const getBranchName = async (): Promise<string> => {
-    return git.revparse(['--abbrev-ref', 'HEAD'])
+  public async getBranchName(): Promise<string> {
+    return this.git.revparse(['--abbrev-ref', 'HEAD'])
   }
 
   /**
@@ -51,8 +53,8 @@ const createGitService = (): GitService => {
    * @param count - Number of commits to retrieve (default: 5).
    * @returns Array of recent commits with their details.
    */
-  const getRecentCommits = async (count: number = 5): Promise<GitCommit[]> => {
-    const log = await git.log([
+  public async getRecentCommits(count: number = 5): Promise<GitCommit[]> {
+    const log = await this.git.log([
       `-${count}`,
       '--pretty=format:%h|%ar|%s|%d',
       '--date=relative',
@@ -87,8 +89,8 @@ const createGitService = (): GitService => {
    *
    * @returns The status of the git repository.
    */
-  const getStatus = async (): Promise<GitStatus> => {
-    const status = await git.status()
+  public async getStatus(): Promise<GitStatus> {
+    const status = await this.git.status()
     return {
       isClean: status.isClean(),
       staged: status.staged,
@@ -101,8 +103,8 @@ const createGitService = (): GitService => {
    *
    * @returns The staged diff of the git repository.
    */
-  const getStagedDiff = async (): Promise<string> => {
-    return git.diff(['--staged'])
+  private async getStagedDiff(): Promise<string> {
+    return this.git.diff(['--staged'])
   }
 
   /**
@@ -110,8 +112,8 @@ const createGitService = (): GitService => {
    *
    * @returns The diff of all changes in the git repository.
    */
-  const getAllDiff = async (): Promise<string> => {
-    return git.diff()
+  private async getAllDiff(): Promise<string> {
+    return this.git.diff()
   }
 
   /**
@@ -120,7 +122,7 @@ const createGitService = (): GitService => {
    * @param message - The commit message to format.
    * @returns The formatted commit message.
    */
-  const formatCommitMessage = (message: CommitMessage | string): string => {
+  private formatCommitMessage(message: CommitMessage | string): string {
     if (typeof message === 'string') {
       return message
     }
@@ -139,8 +141,8 @@ const createGitService = (): GitService => {
    *
    * @returns The processed diff of staged changes.
    */
-  const getStagedChanges = async (): Promise<ProcessedDiff> => {
-    const diff = await getStagedDiff()
+  public async getStagedChanges(): Promise<ProcessedDiff> {
+    const diff = await this.getStagedDiff()
     return DiffProcessor.processDiff(diff)
   }
 
@@ -149,8 +151,8 @@ const createGitService = (): GitService => {
    *
    * @returns The processed diff of all changes.
    */
-  const getAllChanges = async (): Promise<ProcessedDiff> => {
-    const diff = await getAllDiff()
+  public async getAllChanges(): Promise<ProcessedDiff> {
+    const diff = await this.getAllDiff()
     return DiffProcessor.processDiff(diff)
   }
 
@@ -159,8 +161,8 @@ const createGitService = (): GitService => {
    *
    * @returns The short status display.
    */
-  const getShortStatus = async (): Promise<string> => {
-    return git.raw(['status', '--short'])
+  public async getShortStatus(): Promise<string> {
+    return this.git.raw(['status', '--short'])
   }
 
   /**
@@ -168,8 +170,8 @@ const createGitService = (): GitService => {
    *
    * @returns True if there are changes, false otherwise.
    */
-  const hasChanges = async (): Promise<boolean> => {
-    const status = await getStatus()
+  public async hasChanges(): Promise<boolean> {
+    const status = await this.getStatus()
     return !status.isClean
   }
 
@@ -178,16 +180,16 @@ const createGitService = (): GitService => {
    *
    * @returns True if there are staged changes, false otherwise.
    */
-  const hasStaged = async (): Promise<boolean> => {
-    const status = await getStatus()
+  public async hasStaged(): Promise<boolean> {
+    const status = await this.getStatus()
     return status.staged.length > 0
   }
 
   /**
    * Stages all changes in the working directory.
    */
-  const stageAll = async (): Promise<void> => {
-    await git.add('.')
+  public async stageAll(): Promise<void> {
+    await this.git.add('.')
   }
 
   /**
@@ -195,28 +197,10 @@ const createGitService = (): GitService => {
    *
    * @param message - The commit message.
    */
-  const commit = async (message: CommitMessage | string): Promise<void> => {
-    await git.commit(formatCommitMessage(message))
-  }
-
-  /**
-   * Returns the GitService instance.
-   *
-   * @returns The GitService instance.
-   */
-  return {
-    getStagedChanges,
-    getAllChanges,
-    getStatus,
-    getShortStatus,
-    commit,
-    hasChanges,
-    hasStaged,
-    stageAll,
-    getBranchName,
-    getRecentCommits,
+  public async commit(message: CommitMessage | string): Promise<void> {
+    await this.git.commit(this.formatCommitMessage(message))
   }
 }
 
 // Export a single instance
-export const gitService = createGitService()
+export const gitService = new GitServiceImpl()
