@@ -10,7 +10,7 @@ const COMMIT_MESSAGE_SYSTEM_CONTENT = `You are a helpful assistant that generate
 Follow the conventional commits format: <type>(<scope>): <description>
 Types: feat|fix|docs|style|refactor|test|chore
 Keep the first line under 72 characters.
-Use bullet points for the body if needed.
+Use bullet points for the body (at least 2).
 DO NOT INCLUDE ANYTHING ELSE IN THE RESPONSE OR WRAP IN ANYTHING ELSE.
 ONLY SEND ONE COMMIT MESSAGE.`
 
