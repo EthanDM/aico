@@ -31,7 +31,7 @@ interface GitService {
 /**
  * Service for interacting with Git repository and managing version control operations.
  */
-class GitServiceImpl implements GitService {
+class GitService implements GitService {
   private git: SimpleGit
 
   constructor() {
@@ -202,5 +202,4 @@ class GitServiceImpl implements GitService {
   }
 }
 
-// Export a single instance
-export const gitService = new GitServiceImpl()
+export default new GitService()

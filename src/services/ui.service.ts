@@ -1,6 +1,6 @@
 import { CommitMessage } from '../types'
 import { loggerService } from './logger.service'
-import { gitService } from './git.service'
+import GitService from './git.service'
 
 interface UIService {
   handleAction: (
@@ -26,7 +26,7 @@ class UIServiceImpl implements UIService {
   ): Promise<'exit' | 'restart' | void> {
     switch (action) {
       case 'accept':
-        await gitService.commit(message)
+        await GitService.commit(message)
         loggerService.info('✅ Commit created successfully!')
         return
 
@@ -47,7 +47,7 @@ class UIServiceImpl implements UIService {
         const title = lines[0]
         const body = lines.slice(2).join('\n')
 
-        await gitService.commit({ title, body })
+        await GitService.commit({ title, body })
         loggerService.info('✅ Commit created successfully!')
         return
       }
@@ -56,7 +56,7 @@ class UIServiceImpl implements UIService {
         return 'restart'
 
       case 'diff':
-        const diff = await gitService.getStagedChanges()
+        const diff = await GitService.getStagedChanges()
         console.log('\nFull diff:')
         console.log(diff.summary)
         return this.handleAction(action, message)

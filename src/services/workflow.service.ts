@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import { Config, CommitMessage, ProcessedDiff } from '../types'
 import { createOpenAIService } from './openai.service'
-import { gitService } from './git.service'
+import GitService from './git.service'
 import { uiService } from './ui.service'
 import { loggerService } from './logger.service'
 
@@ -79,7 +79,7 @@ class WorkflowServiceImpl implements WorkflowService {
     loggerService.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
 
     // Show status before prompting
-    const status = await gitService.getShortStatus()
+    const status = await GitService.getShortStatus()
     console.log('\nWorking directory status:')
     console.log(chalk.blue(status))
 
@@ -99,7 +99,7 @@ class WorkflowServiceImpl implements WorkflowService {
 
     switch (action) {
       case 'stage':
-        await gitService.stageAll()
+        await GitService.stageAll()
         return true
       case 'continue':
         return true
@@ -128,8 +128,8 @@ class WorkflowServiceImpl implements WorkflowService {
 
     // Check both staged and all changes
     const [hasStaged, hasChanges] = await Promise.all([
-      gitService.hasStaged(),
-      gitService.hasChanges(),
+      GitService.hasStaged(),
+      GitService.hasChanges(),
     ])
 
     loggerService.debug('\n📋 Git Status:')
@@ -145,7 +145,7 @@ class WorkflowServiceImpl implements WorkflowService {
       loggerService.warn('No changes are currently staged for commit')
 
       // Show status before prompting
-      const status = await gitService.getShortStatus()
+      const status = await GitService.getShortStatus()
       console.log('\nWorking directory status:')
       console.log(chalk.blue(status))
 
@@ -163,15 +163,15 @@ class WorkflowServiceImpl implements WorkflowService {
       ])
 
       if (action === 'stage') {
-        await gitService.stageAll()
+        await GitService.stageAll()
       } else {
         process.exit(0)
       }
     }
 
     // Get diffs after potential staging
-    let stagedDiff = await gitService.getStagedChanges()
-    const allDiff = await gitService.getAllChanges()
+    let stagedDiff = await GitService.getStagedChanges()
+    const allDiff = await GitService.getAllChanges()
 
     // Check if there are still unstaged changes
     if (stagedDiff.stats.filesChanged < allDiff.stats.filesChanged) {
@@ -186,7 +186,7 @@ class WorkflowServiceImpl implements WorkflowService {
 
       // Refresh diff if we staged more changes
       if (stagedDiff.stats.filesChanged !== allDiff.stats.filesChanged) {
-        stagedDiff = await gitService.getStagedChanges()
+        stagedDiff = await GitService.getStagedChanges()
       }
     }
 
