@@ -13,20 +13,21 @@ interface WorkflowService {
 }
 
 /**
- * Creates a workflow service to handle the commit message generation flow.
- *
- * @param config - The program configuration.
- * @returns An instance of the WorkflowService.
+ * Service for handling the commit message generation workflow.
  */
-export const createWorkflowService = (config: Config): WorkflowService => {
-  const openai = createOpenAIService(config.openai)
+class WorkflowServiceImpl implements WorkflowService {
+  private openai
+
+  constructor(config: Config) {
+    this.openai = createOpenAIService(config.openai)
+  }
 
   /**
    * Logs debug information about the diff.
    *
    * @param diff - The processed diff information.
    */
-  const logDebugDiff = (diff: ProcessedDiff): void => {
+  private logDebugDiff(diff: ProcessedDiff): void {
     loggerService.debug('\n📊 Git Stats:')
     loggerService.debug(`Files changed: ${diff.stats.filesChanged}`)
     loggerService.debug(`Additions: ${diff.stats.additions}`)
@@ -69,10 +70,10 @@ export const createWorkflowService = (config: Config): WorkflowService => {
    *
    * @returns True if we should proceed (either changes were staged or user wants to continue anyway).
    */
-  const handleUnstagedChanges = async (
+  private async handleUnstagedChanges(
     stagedCount: number,
     totalCount: number
-  ): Promise<boolean> => {
+  ): Promise<boolean> {
     loggerService.warn('⚠️  Some changes are not staged for commit')
     loggerService.info('   Staged: ' + chalk.green(`${stagedCount} files`))
     loggerService.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
@@ -116,9 +117,9 @@ export const createWorkflowService = (config: Config): WorkflowService => {
    * @returns The generated commit message.
    * @throws Error if there are no changes to commit.
    */
-  const generateCommitMessage = async (
+  public async generateCommitMessage(
     userMessage?: string
-  ): Promise<CommitMessage> => {
+  ): Promise<CommitMessage> {
     loggerService.info('🔍 Analyzing changes...')
 
     if (userMessage) {
@@ -174,7 +175,7 @@ export const createWorkflowService = (config: Config): WorkflowService => {
 
     // Check if there are still unstaged changes
     if (stagedDiff.stats.filesChanged < allDiff.stats.filesChanged) {
-      const shouldProceed = await handleUnstagedChanges(
+      const shouldProceed = await this.handleUnstagedChanges(
         stagedDiff.stats.filesChanged,
         allDiff.stats.filesChanged
       )
@@ -190,7 +191,7 @@ export const createWorkflowService = (config: Config): WorkflowService => {
     }
 
     // Log detailed diff information in debug mode
-    logDebugDiff(stagedDiff)
+    this.logDebugDiff(stagedDiff)
 
     loggerService.info('\n📊 Git Stats:')
     loggerService.info(`Files changed: ${stagedDiff.stats.filesChanged}`)
@@ -200,7 +201,10 @@ export const createWorkflowService = (config: Config): WorkflowService => {
     loggerService.info(`Processed length: ${stagedDiff.stats.processedLength}`)
 
     loggerService.info('💭 Generating commit message...')
-    const message = await openai.generateCommitMessage(stagedDiff, userMessage)
+    const message = await this.openai.generateCommitMessage(
+      stagedDiff,
+      userMessage
+    )
 
     console.log('\n💡 Proposed commit message:')
     console.log(chalk.green(message.title))
@@ -217,9 +221,9 @@ export const createWorkflowService = (config: Config): WorkflowService => {
    * @param message - The commit message to work with.
    * @returns The result of the action ('exit', 'restart', or void).
    */
-  const promptForAction = async (
+  public async promptForAction(
     message: CommitMessage
-  ): Promise<'exit' | 'restart' | void> => {
+  ): Promise<'exit' | 'restart' | void> {
     const { default: inquirer } = await import('inquirer')
     const { action } = await inquirer.prompt([
       {
@@ -238,12 +242,13 @@ export const createWorkflowService = (config: Config): WorkflowService => {
 
     return uiService.handleAction(action, message)
   }
-
-  return {
-    generateCommitMessage,
-    promptForAction,
-  }
 }
 
+/**
+ * Creates and exports a workflow service instance.
+ *
+ * @param config - The program configuration
+ * @returns A workflow service instance
+ */
 export const createWorkflow = (config: Config): WorkflowService =>
-  createWorkflowService(config)
+  new WorkflowServiceImpl(config)
