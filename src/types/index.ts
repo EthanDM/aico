@@ -1,5 +1,8 @@
 import { z } from 'zod'
 
+/**
+ * Config schema for the application.
+ */
 export const ConfigSchema = z.object({
   openai: z.object({
     apiKey: z.string(),
@@ -23,8 +26,14 @@ export const ConfigSchema = z.object({
   }),
 })
 
+/**
+ * Type for the Config schema.
+ */
 export type Config = z.infer<typeof ConfigSchema>
 
+/**
+ * Interface for the GitDiff type.
+ */
 export interface GitDiff {
   fileOperations: string[]
   functionChanges: string[]
@@ -34,6 +43,9 @@ export interface GitDiff {
   rawDiff: string
 }
 
+/**
+ * Interface for the ProcessedDiff type.
+ */
 export interface ProcessedDiff {
   summary: string
   details: GitDiff
@@ -47,13 +59,22 @@ export interface ProcessedDiff {
   }
 }
 
+/**
+ * Interface for the CommitMessage type.
+ */
 export interface CommitMessage {
   title: string
   body?: string
 }
 
+/**
+ * Type for the LogLevel enum.
+ */
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
 
+/**
+ * Interface for the OpenAIService type.
+ */
 export interface OpenAIService {
   generateCommitMessage: (
     diff: ProcessedDiff,

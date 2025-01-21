@@ -23,11 +23,43 @@ const NOISY_FILE_PATTERNS = [
   /\.DS_Store$/,
 ]
 
-interface DiffProcessor {
+/**
+ * Interface for the DiffProcessor type.
+ */
+export interface DiffProcessor {
+  /**
+   * Processes a raw diff string into a structured format with statistics and summaries.
+   * @param rawDiff - The raw diff string from git
+   * @returns A processed diff object containing summary, details, and stats
+   */
   processDiff: (rawDiff: string) => ProcessedDiff
+
+  /**
+   * Converts a diff object into a human-readable summary string.
+   * @param diff - The processed diff object
+   * @returns A formatted summary string
+   */
   summarizeDiff: (diff: GitDiff) => string
+
+  /**
+   * Extracts file operations (modifications, additions, deletions) from a diff.
+   * @param diff - The raw diff string
+   * @returns Array of file operation strings
+   */
   extractFileOperations: (diff: string) => string[]
+
+  /**
+   * Extracts function and class changes from a diff.
+   * @param diff - The raw diff string
+   * @returns Array of function change strings
+   */
   extractFunctionChanges: (diff: string) => string[]
+
+  /**
+   * Extracts dependency changes (imports, requires) from a diff.
+   * @param diff - The raw diff string
+   * @returns Array of dependency change strings
+   */
   extractDependencyChanges: (diff: string) => string[]
 }
 
@@ -37,7 +69,7 @@ interface DiffProcessor {
  *
  * @returns An instance of DiffProcessor
  */
-const createDiffProcessor = (): DiffProcessor => {
+const createDiffProcessor = () => {
   /**
    * Checks if a file path matches any noisy file patterns.
    *
