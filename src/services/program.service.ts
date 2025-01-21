@@ -42,12 +42,14 @@ const defaultConfig: Config = {
 }
 
 /**
- * Creates a program service to handle CLI setup and configuration.
- *
- * @returns An instance of the ProgramService.
+ * Service for handling CLI program setup and configuration.
  */
-export const createProgramService = (): ProgramService => {
-  const program = new Command()
+class ProgramServiceImpl implements ProgramService {
+  private program: Command
+
+  constructor() {
+    this.program = new Command()
+  }
 
   /**
    * Initializes the program, parses options, and creates configuration.
@@ -55,12 +57,12 @@ export const createProgramService = (): ProgramService => {
    * @returns The program configuration and options.
    * @throws Error if OPENAI_KEY is not set.
    */
-  const initialize = async (): Promise<{
+  public async initialize(): Promise<{
     config: Config
     options: ProgramOptions
-  }> => {
+  }> {
     // Parse command line arguments
-    program
+    this.program
       .name('aico')
       .description('AI-powered git commit message generator')
       .version('1.0.0')
@@ -68,8 +70,8 @@ export const createProgramService = (): ProgramService => {
       .option('-4, --gpt4', 'use GPT-4 model')
       .option('-m, --message <message>', 'Provide a message to guide the AI')
 
-    program.parse(process.argv)
-    const options = program.opts<ProgramOptions>()
+    this.program.parse(process.argv)
+    const options = this.program.opts<ProgramOptions>()
 
     // Validate environment
     if (!process.env.OPENAI_KEY) {
@@ -105,10 +107,7 @@ export const createProgramService = (): ProgramService => {
       throw error
     }
   }
-
-  return {
-    initialize,
-  }
 }
 
-export const programService = createProgramService()
+// Export a single instance
+export const programService = new ProgramServiceImpl()
