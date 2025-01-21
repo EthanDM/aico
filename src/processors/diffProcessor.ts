@@ -1,82 +1,18 @@
 import { ProcessedDiff, GitDiff } from '../types'
+import { NOISY_FILE_PATTERNS } from '../constants/patterns'
 
 /**
- * Patterns for files that typically add noise to diffs.
- */
-const NOISY_FILE_PATTERNS = [
-  // Package managers and dependencies
-  /^package-lock\.json$/,
-  /^yarn\.lock$/,
-  /^pnpm-lock\.yaml$/,
-  /^.*\.lock$/,
-  // Build outputs
-  /^dist\//,
-  /^build\//,
-  /^\.next\//,
-  /^node_modules\//,
-  // Generated files
-  /\.min\.(js|css)$/,
-  /\.bundle\.js$/,
-  /\.generated\./,
-  // Environment and config
-  /^\.env/,
-  /\.DS_Store$/,
-]
-
-/**
- * Interface for the DiffProcessor type.
- */
-export interface DiffProcessor {
-  /**
-   * Processes a raw diff string into a structured format with statistics and summaries.
-   * @param rawDiff - The raw diff string from git
-   * @returns A processed diff object containing summary, details, and stats
-   */
-  processDiff: (rawDiff: string) => ProcessedDiff
-
-  /**
-   * Converts a diff object into a human-readable summary string.
-   * @param diff - The processed diff object
-   * @returns A formatted summary string
-   */
-  summarizeDiff: (diff: GitDiff) => string
-
-  /**
-   * Extracts file operations (modifications, additions, deletions) from a diff.
-   * @param diff - The raw diff string
-   * @returns Array of file operation strings
-   */
-  extractFileOperations: (diff: string) => string[]
-
-  /**
-   * Extracts function and class changes from a diff.
-   * @param diff - The raw diff string
-   * @returns Array of function change strings
-   */
-  extractFunctionChanges: (diff: string) => string[]
-
-  /**
-   * Extracts dependency changes (imports, requires) from a diff.
-   * @param diff - The raw diff string
-   * @returns Array of dependency change strings
-   */
-  extractDependencyChanges: (diff: string) => string[]
-}
-
-/**
- * Creates a processor for analyzing and summarizing diffs.
+ * A processor for analyzing and summarizing diffs.
  * This is a general-purpose diff processor that can work with any Git-like diff format.
- *
- * @returns An instance of DiffProcessor
  */
-const createDiffProcessor = () => {
+class DiffProcessor {
   /**
    * Checks if a file path matches any noisy file patterns.
    *
    * @param filePath - The file path to check
    * @returns True if the file is considered noisy
    */
-  const isNoisyFile = (filePath: string): boolean => {
+  private isNoisyFile(filePath: string): boolean {
     return NOISY_FILE_PATTERNS.some((pattern) => pattern.test(filePath))
   }
 
@@ -86,14 +22,14 @@ const createDiffProcessor = () => {
    * @param diff - The raw diff string
    * @returns Array of file operation strings
    */
-  const extractFileOperations = (diff: string): string[] => {
+  private extractFileOperations(diff: string): string[] {
     const operations: string[] = []
     const fileRegex = /^diff --git a\/(.*) b\/(.*)/gm
     let match
 
     while ((match = fileRegex.exec(diff)) !== null) {
       const filePath = match[1]
-      if (!isNoisyFile(filePath)) {
+      if (!this.isNoisyFile(filePath)) {
         operations.push(`M ${filePath}`)
       }
     }
@@ -107,7 +43,7 @@ const createDiffProcessor = () => {
    * @param diff - The raw diff string
    * @returns Array of function change strings
    */
-  const extractFunctionChanges = (diff: string): string[] => {
+  private extractFunctionChanges(diff: string): string[] {
     const changes: string[] = []
     const functionRegex = /^[\+\-].*(?:function|class|const|let|var)\s+(\w+)/gm
     let match
@@ -126,7 +62,7 @@ const createDiffProcessor = () => {
    * @param diff - The raw diff string
    * @returns Array of dependency change strings
    */
-  const extractDependencyChanges = (diff: string): string[] => {
+  private extractDependencyChanges(diff: string): string[] {
     const changes: string[] = []
     const dependencyRegex =
       /^[\+\-].*(?:import|require|from)\s+['"]([^'"]+)['"]/gm
@@ -146,7 +82,7 @@ const createDiffProcessor = () => {
    * @param diff - The processed diff object
    * @returns A summary string
    */
-  const summarizeDiff = (diff: GitDiff): string => {
+  private summarizeDiff(diff: GitDiff): string {
     const parts: string[] = []
 
     if (diff.fileOperations.length > 0) {
@@ -176,11 +112,11 @@ const createDiffProcessor = () => {
    * @param rawDiff - The raw diff string
    * @returns A processed diff object
    */
-  const processDiff = (rawDiff: string): ProcessedDiff => {
+  public processDiff(rawDiff: string): ProcessedDiff {
     const CHARACTER_LIMIT = 20000
-    const fileOperations = extractFileOperations(rawDiff)
-    const functionChanges = extractFunctionChanges(rawDiff)
-    const dependencyChanges = extractDependencyChanges(rawDiff)
+    const fileOperations = this.extractFileOperations(rawDiff)
+    const functionChanges = this.extractFunctionChanges(rawDiff)
+    const dependencyChanges = this.extractDependencyChanges(rawDiff)
 
     // Extract additions and deletions
     const additions: string[] = []
@@ -201,7 +137,7 @@ const createDiffProcessor = () => {
 
     // Use raw diff if under limit, otherwise use summary
     const shouldSummarize = rawDiff.length > CHARACTER_LIMIT
-    const summary = shouldSummarize ? summarizeDiff(details) : rawDiff
+    const summary = shouldSummarize ? this.summarizeDiff(details) : rawDiff
 
     // Calculate stats
     const stats = {
@@ -219,15 +155,6 @@ const createDiffProcessor = () => {
       stats,
     }
   }
-
-  return {
-    processDiff,
-    summarizeDiff,
-    extractFileOperations,
-    extractFunctionChanges,
-    extractDependencyChanges,
-  }
 }
 
-// Export a single instance
-export const diffProcessor = createDiffProcessor()
+export default new DiffProcessor()

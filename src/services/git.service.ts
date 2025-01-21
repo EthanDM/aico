@@ -1,6 +1,6 @@
 import { simpleGit, SimpleGit } from 'simple-git'
 import { ProcessedDiff, CommitMessage } from '../types'
-import { diffProcessor } from '../processors/diffProcessor'
+import DiffProcessor from '../processors/diffProcessor'
 
 interface GitCommit {
   hash: string
@@ -141,7 +141,7 @@ const createGitService = (): GitService => {
    */
   const getStagedChanges = async (): Promise<ProcessedDiff> => {
     const diff = await getStagedDiff()
-    return diffProcessor.processDiff(diff)
+    return DiffProcessor.processDiff(diff)
   }
 
   /**
@@ -151,7 +151,7 @@ const createGitService = (): GitService => {
    */
   const getAllChanges = async (): Promise<ProcessedDiff> => {
     const diff = await getAllDiff()
-    return diffProcessor.processDiff(diff)
+    return DiffProcessor.processDiff(diff)
   }
 
   /**
