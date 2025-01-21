@@ -1,4 +1,4 @@
-# ai-commit
+# aico
 
 An AI-powered git commit message generator that creates conventional commit messages using OpenAI.
 
@@ -22,18 +22,18 @@ An AI-powered git commit message generator that creates conventional commit mess
 ### Global Installation
 
 ```bash
-npm install -g ai-commit
+npm install -g aico
 ```
 
 ### Local Installation
 
 ```bash
-npm install ai-commit
+npm install aico
 ```
 
 ## Configuration
 
-Create a configuration file at `~/.config/ai-commit/config.json`:
+Create a configuration file at `~/.config/aico/config.json`:
 
 ```json
 {
@@ -63,22 +63,22 @@ Alternatively, you can use environment variables:
 
 ```bash
 # Generate a commit message for staged changes
-ai-commit
+aico
 
 # Generate a commit message with guidance
-ai-commit -m "Updated the login component"
+aico -m "Updated the login component"
 
 # Show debug information
-ai-commit -d
+aico -d
 
 # Show help
-ai-commit --help
+aico --help
 ```
 
 ### Interactive Workflow
 
 1. Stage your changes using `git add`
-2. Run `ai-commit`
+2. Run `aico`
 3. Review the generated commit message
 4. Choose an action:
    - Accept and commit
@@ -147,12 +147,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 MIT License - see LICENSE file for details
 
-````
-
 Let's also create a shorter installation guide for your dotfiles:
 
-```markdown:config/modules/ai_commit/INSTALL.md
-# Installing ai-commit in dotfiles
+````markdown:config/modules/ai_commit/INSTALL.md
+# Installing aico in dotfiles
 
 1. Navigate to the module directory:
 ```bash
@@ -178,7 +176,7 @@ npm link
 ```
 
 5. Configure OpenAI:
-   Create `~/.config/ai-commit/config.json`:
+   Create `~/.config/aico/config.json`:
 
 ```json
 {
@@ -191,18 +189,11 @@ npm link
 6. Test the installation:
 
 ```bash
-ai-commit --help
+aico --help
 ```
 
 If you get permission errors:
 
-```bash
-chmod +x dist/cli.js
 ```
 
-Make sure npm binaries are in your PATH:
-
-```bash
-echo 'export PATH="$PATH:$(npm config get prefix)/bin"' >> ~/.zshrc
-source ~/.zshrc
 ```

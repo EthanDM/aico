@@ -61,7 +61,7 @@ export const createProgramService = (): ProgramService => {
   }> => {
     // Parse command line arguments
     program
-      .name('ai-commit')
+      .name('aico')
       .description('AI-powered git commit message generator')
       .version('1.0.0')
       .option('-d, --debug', 'enable debug mode')
