@@ -41,6 +41,7 @@ export interface GitDiff {
   additions: string[]
   deletions: string[]
   rawDiff: string
+  filteredRawDiff: string
 }
 
 /**

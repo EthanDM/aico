@@ -38,6 +38,22 @@ class DiffProcessor {
   }
 
   /**
+   * Filters out noisy files from the raw diff.
+   *
+   * @param rawDiff - The raw diff string
+   * @returns The filtered diff string
+   */
+  private filterNoisyFiles(rawDiff: string): string {
+    const diffSections = rawDiff.split(/(?=diff --git )/g)
+    return diffSections
+      .filter((section) => {
+        const match = section.match(/^diff --git a\/(.*) b\//)
+        return match ? !this.isNoisyFile(match[1]) : true
+      })
+      .join('')
+  }
+
+  /**
    * Extracts function changes from a diff.
    *
    * @param diff - The raw diff string
@@ -114,14 +130,15 @@ class DiffProcessor {
    */
   public processDiff(rawDiff: string): ProcessedDiff {
     const CHARACTER_LIMIT = 20000
+    const filteredRawDiff = this.filterNoisyFiles(rawDiff)
     const fileOperations = this.extractFileOperations(rawDiff)
-    const functionChanges = this.extractFunctionChanges(rawDiff)
-    const dependencyChanges = this.extractDependencyChanges(rawDiff)
+    const functionChanges = this.extractFunctionChanges(filteredRawDiff)
+    const dependencyChanges = this.extractDependencyChanges(filteredRawDiff)
 
-    // Extract additions and deletions
+    // Extract additions and deletions from filtered diff
     const additions: string[] = []
     const deletions: string[] = []
-    rawDiff.split('\n').forEach((line) => {
+    filteredRawDiff.split('\n').forEach((line) => {
       if (line.startsWith('+') && !line.startsWith('+++')) additions.push(line)
       if (line.startsWith('-') && !line.startsWith('---')) deletions.push(line)
     })
@@ -133,15 +150,19 @@ class DiffProcessor {
       additions,
       deletions,
       rawDiff,
+      filteredRawDiff,
     }
 
-    // Use raw diff if under limit, otherwise use summary
-    const shouldSummarize = rawDiff.length > CHARACTER_LIMIT
-    const summary = shouldSummarize ? this.summarizeDiff(details) : rawDiff
+    // Use filtered raw diff if under limit, otherwise use summary
+    const shouldSummarize = filteredRawDiff.length > CHARACTER_LIMIT
+    const summary = shouldSummarize
+      ? this.summarizeDiff(details)
+      : filteredRawDiff
 
     // Calculate stats
     const stats = {
       originalLength: rawDiff.length,
+      filteredLength: filteredRawDiff.length,
       processedLength: summary.length,
       filesChanged: fileOperations.length,
       additions: additions.length,

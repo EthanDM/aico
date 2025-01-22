@@ -51,6 +51,9 @@ class AppLogService {
     LoggerService.debug('\n📄 Raw Diff:')
     LoggerService.debug(diff.details.rawDiff)
 
+    LoggerService.debug('\n📄 Filtered Raw Diff:')
+    LoggerService.debug(diff.details.filteredRawDiff)
+
     LoggerService.debug('\n📝 Summary:')
     LoggerService.debug(diff.summary)
   }
