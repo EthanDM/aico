@@ -86,10 +86,9 @@ class ProgramService {
       .version('1.0.0')
       .option('-d, --debug', chalk.yellow('enable debug mode'))
       .option('-m, --mini', chalk.yellow('use lighter GPT-4o-mini model'))
-      .option('-s, --skip', chalk.yellow('skip prompts and use GPT-4o'))
+      .option('-s, --skip', chalk.yellow('skip prompts and auto-stage changes'))
       .parse(process.argv)
 
-    this.program.parse(process.argv)
     const options = this.program.opts<ProgramOptions>()
 
     // Validate environment
