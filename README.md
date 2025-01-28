@@ -65,9 +65,6 @@ Alternatively, you can use environment variables:
 # Generate a commit message for staged changes
 aico
 
-# Generate a commit message with guidance
-aico -m "Updated the login component"
-
 # Show debug information
 aico -d
 
@@ -79,8 +76,9 @@ aico --help
 
 1. Stage your changes using `git add`
 2. Run `aico`
-3. Review the generated commit message
-4. Choose an action:
+3. Optionally provide context to guide the AI
+4. Review the generated commit message
+5. Choose an action:
    - Accept and commit
    - Edit message
    - Regenerate message
@@ -90,7 +88,6 @@ aico --help
 
 ```bash
 Options:
-  -m, --message <string>  Provide guidance for the commit message
   -d, --debug            Enable debug logging
   -h, --help            Display help information
 ```
@@ -148,51 +145,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see LICENSE file for details
 
 Let's also create a shorter installation guide for your dotfiles:
-
-````markdown:config/modules/ai_commit/INSTALL.md
-# Installing aico in dotfiles
-
-1. Navigate to the module directory:
-```bash
-cd config/modules/ai_commit
-````
-
-2. Install dependencies:
-
-```bash
-npm install
-```
-
-3. Build the package:
-
-```bash
-npm run build
-```
-
-4. Link the package globally:
-
-```bash
-npm link
-```
-
-5. Configure OpenAI:
-   Create `~/.config/aico/config.json`:
-
-```json
-{
-  "openai": {
-    "apiKey": "your-api-key-here"
-  }
-}
-```
-
-6. Test the installation:
-
-```bash
-aico --help
-```
-
-If you get permission errors:
 
 ```
 

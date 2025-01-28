@@ -17,6 +17,24 @@ class WorkflowService {
   }
 
   /**
+   * Prompts the user for optional context/guidance for the commit message.
+   *
+   * @returns The user provided context, or undefined if none provided.
+   */
+  private async promptForContext(): Promise<string | undefined> {
+    const { default: inquirer } = await import('inquirer')
+    const { context } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'context',
+        message: 'Add any context to help guide the AI (press Enter to skip):',
+      },
+    ])
+
+    return context ? context.trim() : undefined
+  }
+
+  /**
    * Prompts the user about staging changes.
    *
    * @returns True if we should proceed (either changes were staged or user wants to continue anyway).
@@ -72,6 +90,11 @@ class WorkflowService {
     userMessage?: string
   ): Promise<CommitMessage> {
     LoggerService.info('🔍 Analyzing changes...')
+
+    // If no message was provided via CLI, prompt for context
+    if (!userMessage) {
+      userMessage = await this.promptForContext()
+    }
 
     if (userMessage) {
       LoggerService.debug(`\n💬 User provided message: ${userMessage}`)

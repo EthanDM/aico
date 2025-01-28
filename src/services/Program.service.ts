@@ -8,7 +8,6 @@ import figlet from 'figlet'
 export interface ProgramOptions {
   debug?: boolean
   gpt4?: boolean
-  message?: string
 }
 
 /**
@@ -83,10 +82,6 @@ class ProgramService {
       .version('1.0.0')
       .option('-d, --debug', chalk.yellow('enable debug mode'))
       .option('-4, --gpt4', chalk.yellow('use GPT-4 model'))
-      .option(
-        '-m, --message <message>',
-        chalk.yellow('Provide a message to guide the AI')
-      )
       .parse(process.argv)
 
     this.program.parse(process.argv)

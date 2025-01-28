@@ -13,7 +13,7 @@ const main = async (): Promise<void> => {
     const { config, options } = await programService.initialize()
     const workflow = createWorkflow(config)
 
-    const message = await workflow.generateCommitMessage(options.message)
+    const message = await workflow.generateCommitMessage()
     const result = await workflow.promptForAction(message)
 
     if (result === 'restart') {
