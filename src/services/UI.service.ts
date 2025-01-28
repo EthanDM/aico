@@ -37,6 +37,85 @@ class UIService {
   }
 
   /**
+   * Lets user edit the commit title inline.
+   *
+   * @param currentTitle - The current commit title
+   * @returns The edited title
+   */
+  private async editTitle(currentTitle: string): Promise<string> {
+    const { default: inquirer } = await import('inquirer')
+    const { newTitle } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'newTitle',
+        message: 'Edit commit title:',
+        default: currentTitle,
+        validate: (input: string) => {
+          if (input.trim().length === 0) return 'Title cannot be empty'
+          if (input.length > 72) return 'Title must be under 72 characters'
+          return true
+        },
+      },
+    ])
+    return newTitle.trim()
+  }
+
+  /**
+   * Lets user edit individual bullet points inline.
+   *
+   * @param body - The current commit body
+   * @returns The edited body
+   */
+  private async editBullets(body: string): Promise<string> {
+    const bullets = body
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => line.trim())
+
+    const { default: inquirer } = await import('inquirer')
+    const editedBullets: string[] = []
+
+    for (const bullet of bullets) {
+      const { editedBullet } = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'editedBullet',
+          message: 'Edit bullet point (empty to remove):',
+          default: bullet,
+          validate: (input: string) => {
+            if (input.length > 100)
+              return 'Bullet point must be under 100 characters'
+            return true
+          },
+        },
+      ])
+      if (editedBullet.trim()) {
+        editedBullets.push(editedBullet.trim())
+      }
+    }
+
+    // Option to add new bullets
+    while (true) {
+      const { newBullet } = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'newBullet',
+          message: 'Add new bullet point (empty to finish):',
+          validate: (input: string) => {
+            if (input.length > 100)
+              return 'Bullet point must be under 100 characters'
+            return true
+          },
+        },
+      ])
+      if (!newBullet.trim()) break
+      editedBullets.push(newBullet.trim())
+    }
+
+    return editedBullets.join('\n')
+  }
+
+  /**
    * Handles the user's action choice.
    *
    * @param action - The chosen action.
@@ -63,39 +142,62 @@ class UIService {
             name: 'editType',
             message: 'How would you like to edit the commit message?',
             choices: [
+              { name: 'Edit title only', value: 'title' },
+              {
+                name: 'Edit bullet points individually',
+                value: 'bullets-edit',
+              },
+              {
+                name: 'Select which bullet points to keep',
+                value: 'bullets-select',
+              },
               { name: 'Edit everything in text editor', value: 'full' },
-              { name: 'Select which bullet points to keep', value: 'bullets' },
             ],
           },
         ])
 
-        if (editType === 'bullets' && message.body) {
-          const newBody = await this.selectBulletPoints(message.body)
-          await GitService.commit({
-            title: message.title,
-            body: newBody,
-          })
-          LoggerService.info('✅ Commit created successfully!')
-          return
+        let newTitle = message.title
+        let newBody = message.body
+
+        switch (editType) {
+          case 'title':
+            newTitle = await this.editTitle(message.title)
+            break
+
+          case 'bullets-edit':
+            if (message.body) {
+              newBody = await this.editBullets(message.body)
+            }
+            break
+
+          case 'bullets-select':
+            if (message.body) {
+              newBody = await this.selectBulletPoints(message.body)
+            }
+            break
+
+          case 'full':
+            const { editedMessage } = await inquirer.prompt([
+              {
+                type: 'editor',
+                name: 'editedMessage',
+                message: 'Edit the commit message:',
+                default: [message.title, '', message.body]
+                  .filter(Boolean)
+                  .join('\n'),
+              },
+            ])
+
+            const lines = editedMessage.split('\n')
+            newTitle = lines[0]
+            newBody = lines.slice(2).join('\n')
+            break
         }
 
-        // Full edit in text editor
-        const { editedMessage } = await inquirer.prompt([
-          {
-            type: 'editor',
-            name: 'editedMessage',
-            message: 'Edit the commit message:',
-            default: [message.title, '', message.body]
-              .filter(Boolean)
-              .join('\n'),
-          },
-        ])
-
-        const lines = editedMessage.split('\n')
-        const title = lines[0]
-        const body = lines.slice(2).join('\n')
-
-        await GitService.commit({ title, body })
+        await GitService.commit({
+          title: newTitle,
+          body: newBody,
+        })
         LoggerService.info('✅ Commit created successfully!')
         return
       }
