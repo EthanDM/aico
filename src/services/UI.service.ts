@@ -116,21 +116,80 @@ class UIService {
   }
 
   /**
+   * Prompts user to modify context before regenerating.
+   *
+   * @param currentContext - The current context if any
+   * @returns The new context or undefined to keep existing
+   */
+  private async promptForRegenerationContext(
+    currentContext?: string
+  ): Promise<string | undefined> {
+    const { default: inquirer } = await import('inquirer')
+
+    // First ask if they want to modify context
+    const { wantToModify } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'wantToModify',
+        message: currentContext
+          ? 'Would you like to modify the existing context?'
+          : 'Would you like to add context to help guide the AI?',
+        choices: [
+          {
+            name: currentContext
+              ? 'Yes, modify existing context'
+              : 'Yes, add new context',
+            value: true,
+          },
+          {
+            name: currentContext
+              ? 'No, keep existing context'
+              : 'No, regenerate without context',
+            value: false,
+          },
+        ],
+      },
+    ])
+
+    if (!wantToModify) {
+      return undefined
+    }
+
+    // Get new/modified context
+    const { newContext } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'newContext',
+        message: 'Enter context to guide the AI:',
+        default: currentContext,
+        validate: (input: string) => {
+          if (input.length > 500) return 'Context must be under 500 characters'
+          return true
+        },
+      },
+    ])
+
+    return newContext.trim() || undefined
+  }
+
+  /**
    * Handles the user's action choice.
    *
    * @param action - The chosen action.
    * @param message - The commit message to work with.
-   * @returns The result of the action ('exit', 'restart', or void).
+   * @param currentContext - The current user context if any
+   * @returns The result of the action ('exit', 'restart', or void) and optionally new context.
    */
   public async handleAction(
     action: string,
-    message: CommitMessage
-  ): Promise<'exit' | 'restart' | void> {
+    message: CommitMessage,
+    currentContext?: string
+  ): Promise<{ result: 'exit' | 'restart' | void; newContext?: string }> {
     switch (action) {
       case 'accept':
         await GitService.commit(message)
         LoggerService.info('✅ Commit created successfully!')
-        return
+        return { result: undefined }
 
       case 'edit': {
         const { default: inquirer } = await import('inquirer')
@@ -199,25 +258,32 @@ class UIService {
           body: newBody,
         })
         LoggerService.info('✅ Commit created successfully!')
-        return
+        return { result: undefined }
       }
 
-      case 'regenerate':
-        return 'restart'
+      case 'regenerate': {
+        const newContext = await this.promptForRegenerationContext(
+          currentContext
+        )
+        return {
+          result: 'restart',
+          newContext: newContext !== undefined ? newContext : currentContext,
+        }
+      }
 
       case 'diff':
         const diff = await GitService.getStagedChanges()
         console.log('\nFull diff:')
         console.log(diff.summary)
-        return this.handleAction(action, message)
+        return this.handleAction(action, message, currentContext)
 
       case 'cancel':
         LoggerService.info('👋 Operation cancelled')
-        return 'exit'
+        return { result: 'exit' }
 
       default:
         LoggerService.error(`Unknown action: ${action}`)
-        return 'exit'
+        return { result: 'exit' }
     }
   }
 }

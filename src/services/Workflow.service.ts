@@ -183,10 +183,12 @@ class WorkflowService {
    * Prompts the user for action and handles their choice.
    *
    * @param message - The commit message to work with.
+   * @param currentContext - The current user context if any
    * @returns The result of the action ('exit', 'restart', or void).
    */
   public async promptForAction(
-    message: CommitMessage
+    message: CommitMessage,
+    currentContext?: string
   ): Promise<'exit' | 'restart' | void> {
     const { default: inquirer } = await import('inquirer')
     const { action } = await inquirer.prompt([
@@ -204,7 +206,19 @@ class WorkflowService {
       },
     ])
 
-    return uiService.handleAction(action, message)
+    const { result, newContext } = await uiService.handleAction(
+      action,
+      message,
+      currentContext
+    )
+
+    if (result === 'restart') {
+      // Generate a new message with potentially updated context
+      const newMessage = await this.generateCommitMessage(newContext)
+      return this.promptForAction(newMessage, newContext)
+    }
+
+    return result
   }
 }
 
