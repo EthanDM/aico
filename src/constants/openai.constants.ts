@@ -24,7 +24,13 @@ Strictly follow the **Conventional Commits** format: <type>(<scope>): <descripti
    - Avoid redundant or filler points.
    - Each bullet point must not exceed 100 characters.
 
-3. **Validation and Output**:
+3. **Context Weighting**:
+   - Primary: The actual code changes/diff should be the main factor in determining the commit message.
+   - Secondary: User-provided guidance should influence the message but not override what the changes actually show.
+   - Supporting: Branch name can help determine the scope of changes.
+   - Background: Recent commits provide context for understanding the changes but should not heavily influence the new message.
+
+4. **Validation and Output**:
    - Ensure strict adherence to Conventional Commits.
    - Respond with a single plain text commit message (no extra formatting, code blocks, or symbols).
    - Use "\n" for line breaks between the title and body.

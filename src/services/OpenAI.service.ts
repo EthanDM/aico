@@ -32,25 +32,36 @@ class OpenAIService {
   ): Promise<string> {
     const parts = ['Generate a commit message for the following changes:']
 
-    // Add user guidance if provided
+    // Primary context: The actual changes
+    parts.push('\nCurrent changes:')
+    if (diff.stats.wasSummarized) {
+      parts.push(diff.summary)
+      parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
+      parts.push(`Additions: ${diff.stats.additions}`)
+      parts.push(`Deletions: ${diff.stats.deletions}`)
+    } else {
+      parts.push('\nRaw diff:')
+      parts.push(diff.summary)
+    }
+
+    // Secondary context: User guidance
     if (userMessage) {
       parts.push('\nUser suggested message:')
       parts.push(userMessage)
       parts.push(
-        '\nConsider the above message as guidance, but ensure the commit message accurately reflects the changes. Still add commit body if needed.'
+        '\nConsider the above message as guidance, but ensure the commit message accurately reflects the actual changes.'
       )
     }
 
-    // Add branch context
+    // Supporting context: Branch name for scope
     const branchName = await GitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
-
     LoggerService.debug(`🔍 Current branch: ${branchName}`)
 
-    // Add recent commits context
+    // Background context: Recent commits
     const recentCommits = await GitService.getRecentCommits(5)
     if (recentCommits.length > 0) {
-      parts.push('\nRecent commits:')
+      parts.push('\nRecent commits for additional context:')
       recentCommits.forEach((commit) => {
         parts.push(
           `${commit.hash} (${commit.date}): ${commit.message}${
@@ -62,20 +73,6 @@ class OpenAIService {
 
     LoggerService.debug('🔍 Recent commits:')
     LoggerService.debug(parts.join('\n'))
-
-    // Add diff information
-    parts.push('\nCurrent changes:')
-    if (diff.stats.wasSummarized) {
-      // For summarized diffs, include the summary and stats
-      parts.push(diff.summary)
-      parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
-      parts.push(`Additions: ${diff.stats.additions}`)
-      parts.push(`Deletions: ${diff.stats.deletions}`)
-    } else {
-      // For raw diffs, just include the diff directly
-      parts.push('\nRaw diff:')
-      parts.push(diff.summary)
-    }
 
     return parts.join('\n')
   }
