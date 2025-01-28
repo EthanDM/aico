@@ -87,6 +87,104 @@ class OpenAIService {
   }
 
   /**
+   * Checks if a file appears to be binary/media content.
+   *
+   * @param filename - The filename to check
+   * @returns True if the file appears to be binary/media
+   */
+  private isBinaryOrMediaFile(filename: string): boolean {
+    const binaryExtensions = [
+      // Video
+      'mp4',
+      'mov',
+      'avi',
+      'mkv',
+      'wmv',
+      // Images
+      'png',
+      'jpg',
+      'jpeg',
+      'gif',
+      'bmp',
+      'ico',
+      'svg',
+      'webp',
+      // Audio
+      'mp3',
+      'wav',
+      'ogg',
+      'm4a',
+      // Documents
+      'pdf',
+      'doc',
+      'docx',
+      'xls',
+      'xlsx',
+      'ppt',
+      'pptx',
+      // Archives
+      'zip',
+      'rar',
+      'tar',
+      'gz',
+      '7z',
+      // Other binaries
+      'exe',
+      'dll',
+      'so',
+      'dylib',
+      'bin',
+      // Font files
+      'ttf',
+      'otf',
+      'woff',
+      'woff2',
+    ]
+    const ext = filename.split('.').pop()?.toLowerCase()
+    return ext ? binaryExtensions.includes(ext) : false
+  }
+
+  /**
+   * Filters and processes the diff summary to exclude binary/media content.
+   *
+   * @param diff - The original diff
+   * @returns Processed diff with binary content removed
+   */
+  private processDiffContent(diff: ProcessedDiff): ProcessedDiff {
+    const lines = diff.summary.split('\n')
+    const filteredLines: string[] = []
+    let skipCurrentFile = false
+
+    for (const line of lines) {
+      // Check for file headers in diff
+      if (line.startsWith('diff --git')) {
+        const filename = line.split(' ').pop()?.replace('b/', '') ?? ''
+        skipCurrentFile = this.isBinaryOrMediaFile(filename)
+        if (skipCurrentFile) {
+          filteredLines.push(`Skipped binary/media file: ${filename}`)
+          continue
+        }
+      }
+
+      // Skip lines if we're in a binary file section
+      if (skipCurrentFile) {
+        if (line.startsWith('diff --git')) {
+          skipCurrentFile = false // Reset for next file
+        } else {
+          continue
+        }
+      }
+
+      filteredLines.push(line)
+    }
+
+    return {
+      ...diff,
+      summary: filteredLines.join('\n'),
+    }
+  }
+
+  /**
    * Builds the prompt for the OpenAI API.
    *
    * @param diff - The diff to generate a commit message for.
@@ -103,8 +201,14 @@ class OpenAIService {
     const branchName = await GitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
 
+    // Process diff to remove binary content
+    const processedDiff = this.processDiffContent(diff)
+
     // Check if this is a merge commit (based on user context)
-    const { isMerge, mergeInfo } = await this.detectMergeInfo(diff, userMessage)
+    const { isMerge, mergeInfo } = await this.detectMergeInfo(
+      processedDiff,
+      userMessage
+    )
     if (isMerge) {
       parts.push('\nThis is a merge commit.')
       if (mergeInfo) {
@@ -142,14 +246,14 @@ class OpenAIService {
 
     // Add diff information
     parts.push('\nCurrent changes:')
-    if (diff.stats.wasSummarized) {
-      parts.push(diff.summary)
-      parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
-      parts.push(`Additions: ${diff.stats.additions}`)
-      parts.push(`Deletions: ${diff.stats.deletions}`)
+    if (processedDiff.stats.wasSummarized) {
+      parts.push(processedDiff.summary)
+      parts.push(`\nFiles changed: ${processedDiff.stats.filesChanged}`)
+      parts.push(`Additions: ${processedDiff.stats.additions}`)
+      parts.push(`Deletions: ${processedDiff.stats.deletions}`)
     } else {
       parts.push('\nRaw diff:')
-      parts.push(diff.summary)
+      parts.push(processedDiff.summary)
     }
 
     return parts.join('\n')
