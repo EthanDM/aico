@@ -12,17 +12,30 @@ Strictly follow the **Conventional Commits** format: <type>(<scope>): <descripti
 - feat(api): add user authentication flow
 - fix(ui): resolve alignment issues in modal
 - chore(deps): update dependencies
+- chore(merge): merge feature/auth into main
 
 **Rules**:
 1. **Summary (Title)**:
    - Strictly under 72 characters.
    - Rephrase or truncate if necessary while retaining clarity.
+   - For merge commits, use format: chore(merge): merge <source> into <target>
 
 2. **Body**:
-   - Use 2-6 bullet points with concise, meaningful changes.
-   - Each point starts with a verb (e.g., "Add", "Fix", "Update").
-   - Avoid redundant or filler points.
-   - Each bullet point must not exceed 100 characters.
+   - Each bullet point MUST add substantial value and describe a meaningful change
+   - For small, focused commits (1-2 files, single purpose), 1-2 high-quality bullets are sufficient
+   - For medium to large commits (multiple files/components), use 3-5 detailed bullets
+   - Each bullet should describe a specific, concrete change (not vague descriptions)
+   - Start each point with a strong action verb (e.g., "Add", "Refactor", "Optimize")
+   - Each bullet point must not exceed 100 characters
+   - Avoid redundant or filler points that don't add new information
+   - Focus on the "why" and impact when the change isn't obvious
+
+   For merge commits specifically:
+   - ALWAYS list files that had merge conflicts and their resolution approach
+   - Format: "Resolve conflicts in <file>: <brief description of resolution>"
+   - If multiple related files had similar conflict resolutions, group them
+   - Include important decisions made during conflict resolution
+   - If no conflicts occurred, explicitly state "Clean merge with no conflicts"
 
 3. **Context Weighting**:
    - Primary: The actual code changes/diff should be the main factor in determining the commit message.

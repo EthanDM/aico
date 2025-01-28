@@ -20,6 +20,59 @@ class OpenAIService {
   }
 
   /**
+   * Detects if this is a merge commit and extracts conflict information.
+   *
+   * @param diff - The processed diff
+   * @param branchName - Current branch name
+   * @returns Information about the merge and conflicts, if any
+   */
+  private async detectMergeInfo(
+    diff: ProcessedDiff,
+    branchName: string
+  ): Promise<{ isMerge: boolean; mergeInfo?: string[] }> {
+    // Check if this is likely a merge based on branch name or user context
+    const isMerge =
+      branchName.toLowerCase().includes('merge') ||
+      diff.summary.includes('Merge branch') ||
+      diff.summary.includes('Merge remote')
+
+    if (!isMerge) {
+      return { isMerge: false }
+    }
+
+    const mergeInfo: string[] = []
+
+    // Look for conflict markers in the diff
+    const conflictFiles = diff.summary
+      .split('\n')
+      .filter(
+        (line) =>
+          line.includes('<<<<<<<') ||
+          line.includes('=======') ||
+          line.includes('>>>>>>>')
+      )
+      .map((line) => {
+        // Extract filename from diff line
+        const match = line.match(/^(?:---|\+\+\+)\s+(?:a\/|b\/)?(.+)$/)
+        return match ? match[1] : null
+      })
+      .filter((file): file is string => file !== null)
+
+    if (conflictFiles.length > 0) {
+      // Get unique files
+      const uniqueFiles = [...new Set(conflictFiles)]
+      mergeInfo.push('Files with resolved conflicts:')
+      uniqueFiles.forEach((file) => {
+        mergeInfo.push(`- ${file}`)
+      })
+    } else {
+      mergeInfo.push('Clean merge with no conflicts')
+    }
+
+    return { isMerge, mergeInfo }
+  }
+
+  /**
    * Builds the prompt for the OpenAI API.
    *
    * @param diff - The diff to generate a commit message for.
@@ -32,19 +85,21 @@ class OpenAIService {
   ): Promise<string> {
     const parts = ['Generate a commit message for the following changes:']
 
-    // Primary context: The actual changes
-    parts.push('\nCurrent changes:')
-    if (diff.stats.wasSummarized) {
-      parts.push(diff.summary)
-      parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
-      parts.push(`Additions: ${diff.stats.additions}`)
-      parts.push(`Deletions: ${diff.stats.deletions}`)
-    } else {
-      parts.push('\nRaw diff:')
-      parts.push(diff.summary)
+    // Add branch context early to help identify merges
+    const branchName = await GitService.getBranchName()
+    parts.push(`\nCurrent branch: ${branchName}`)
+
+    // Check if this is a merge commit
+    const { isMerge, mergeInfo } = await this.detectMergeInfo(diff, branchName)
+    if (isMerge) {
+      parts.push('\nThis is a merge commit.')
+      if (mergeInfo) {
+        parts.push('\nMerge conflict information:')
+        parts.push(...mergeInfo)
+      }
     }
 
-    // Secondary context: User guidance
+    // Add user guidance if provided
     if (userMessage) {
       parts.push('\nUser suggested message:')
       parts.push(userMessage)
@@ -53,12 +108,9 @@ class OpenAIService {
       )
     }
 
-    // Supporting context: Branch name for scope
-    const branchName = await GitService.getBranchName()
-    parts.push(`\nCurrent branch: ${branchName}`)
     LoggerService.debug(`🔍 Current branch: ${branchName}`)
 
-    // Background context: Recent commits
+    // Add recent commits context
     const recentCommits = await GitService.getRecentCommits(5)
     if (recentCommits.length > 0) {
       parts.push('\nRecent commits for additional context:')
@@ -73,6 +125,18 @@ class OpenAIService {
 
     LoggerService.debug('🔍 Recent commits:')
     LoggerService.debug(parts.join('\n'))
+
+    // Add diff information
+    parts.push('\nCurrent changes:')
+    if (diff.stats.wasSummarized) {
+      parts.push(diff.summary)
+      parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
+      parts.push(`Additions: ${diff.stats.additions}`)
+      parts.push(`Deletions: ${diff.stats.deletions}`)
+    } else {
+      parts.push('\nRaw diff:')
+      parts.push(diff.summary)
+    }
 
     return parts.join('\n')
   }

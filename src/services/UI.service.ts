@@ -64,9 +64,13 @@ class UIService {
    * Lets user edit individual bullet points inline.
    *
    * @param body - The current commit body
+   * @param stats - The diff stats to determine commit size
    * @returns The edited body
    */
-  private async editBullets(body: string): Promise<string> {
+  private async editBullets(
+    body: string,
+    stats: { filesChanged: number }
+  ): Promise<string> {
     const bullets = body
       .split('\n')
       .filter((line) => line.trim())
@@ -74,6 +78,20 @@ class UIService {
 
     const { default: inquirer } = await import('inquirer')
     const editedBullets: string[] = []
+
+    // Show guidance based on commit size
+    const isLargeCommit = stats.filesChanged > 2
+    console.log('\nBullet Point Guidelines:')
+    console.log('- Each bullet must describe a meaningful, specific change')
+    console.log(
+      '- Start with a strong action verb (Add, Refactor, Optimize, etc.)'
+    )
+    console.log('- Focus on the "why" and impact for non-obvious changes')
+    console.log(
+      `- For this ${isLargeCommit ? 'larger' : 'smaller'} commit, aim for ${
+        isLargeCommit ? '3-5' : '1-2'
+      } high-quality bullets\n`
+    )
 
     for (const bullet of bullets) {
       const { editedBullet } = await inquirer.prompt([
@@ -83,8 +101,14 @@ class UIService {
           message: 'Edit bullet point (empty to remove):',
           default: bullet,
           validate: (input: string) => {
-            if (input.length > 100)
-              return 'Bullet point must be under 100 characters'
+            if (input.trim()) {
+              if (input.length > 100)
+                return 'Bullet point must be under 100 characters'
+              if (!input.match(/^[A-Z][a-z]+/))
+                return 'Start with a capitalized action verb'
+              if (input.length < 10)
+                return 'Bullet point seems too short to be meaningful'
+            }
             return true
           },
         },
@@ -96,14 +120,27 @@ class UIService {
 
     // Option to add new bullets
     while (true) {
+      // Show current count and recommendation
+      const currentCount = editedBullets.length
+      const recommendedRange = isLargeCommit ? '3-5' : '1-2'
+      console.log(
+        `\nCurrent bullet count: ${currentCount} (recommended: ${recommendedRange})`
+      )
+
       const { newBullet } = await inquirer.prompt([
         {
           type: 'input',
           name: 'newBullet',
           message: 'Add new bullet point (empty to finish):',
           validate: (input: string) => {
-            if (input.length > 100)
-              return 'Bullet point must be under 100 characters'
+            if (input.trim()) {
+              if (input.length > 100)
+                return 'Bullet point must be under 100 characters'
+              if (!input.match(/^[A-Z][a-z]+/))
+                return 'Start with a capitalized action verb'
+              if (input.length < 10)
+                return 'Bullet point seems too short to be meaningful'
+            }
             return true
           },
         },
@@ -193,6 +230,7 @@ class UIService {
 
       case 'edit': {
         const { default: inquirer } = await import('inquirer')
+        const diff = await GitService.getStagedChanges()
 
         // First ask what type of edit they want to do
         const { editType } = await inquirer.prompt([
@@ -225,7 +263,7 @@ class UIService {
 
           case 'bullets-edit':
             if (message.body) {
-              newBody = await this.editBullets(message.body)
+              newBody = await this.editBullets(message.body, diff.stats)
             }
             break
 
