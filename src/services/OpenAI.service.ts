@@ -23,18 +23,15 @@ class OpenAIService {
    * Detects if this is a merge commit and extracts conflict information.
    *
    * @param diff - The processed diff
-   * @param branchName - Current branch name
+   * @param userMessage - Optional user-provided message for guidance
    * @returns Information about the merge and conflicts, if any
    */
   private async detectMergeInfo(
     diff: ProcessedDiff,
-    branchName: string
+    userMessage?: string
   ): Promise<{ isMerge: boolean; mergeInfo?: string[] }> {
-    // Check if this is likely a merge based on branch name or user context
-    const isMerge =
-      branchName.toLowerCase().includes('merge') ||
-      diff.summary.includes('Merge branch') ||
-      diff.summary.includes('Merge remote')
+    // Only detect merge if user explicitly mentions it
+    const isMerge = userMessage?.toLowerCase().includes('merge') ?? false
 
     if (!isMerge) {
       return { isMerge: false }
@@ -52,17 +49,34 @@ class OpenAIService {
           line.includes('>>>>>>>')
       )
       .map((line) => {
-        // Extract filename from diff line
-        const match = line.match(/^(?:---|\+\+\+)\s+(?:a\/|b\/)?(.+)$/)
+        // Extract filename from diff line with more precise pattern
+        const match = line.match(/^(?:---|\+\+\+)\s+(?:a\/|b\/)?(.+?)(?:\t|$)/)
         return match ? match[1] : null
       })
       .filter((file): file is string => file !== null)
 
-    if (conflictFiles.length > 0) {
-      // Get unique files
-      const uniqueFiles = [...new Set(conflictFiles)]
+    // Also look for typical merge resolution patterns
+    const resolutionFiles = diff.summary
+      .split('\n')
+      .filter(
+        (line) =>
+          line.includes('Conflicts resolved in') ||
+          line.includes('resolve conflict') ||
+          line.includes('resolving conflict')
+      )
+      .map((line) => {
+        const match = line.match(/(?:in|with)\s+([^\s]+)/)
+        return match ? match[1] : null
+      })
+      .filter((file): file is string => file !== null)
+
+    const allConflictFiles = [
+      ...new Set([...conflictFiles, ...resolutionFiles]),
+    ]
+
+    if (allConflictFiles.length > 0) {
       mergeInfo.push('Files with resolved conflicts:')
-      uniqueFiles.forEach((file) => {
+      allConflictFiles.forEach((file) => {
         mergeInfo.push(`- ${file}`)
       })
     } else {
@@ -85,12 +99,12 @@ class OpenAIService {
   ): Promise<string> {
     const parts = ['Generate a commit message for the following changes:']
 
-    // Add branch context early to help identify merges
+    // Add branch context
     const branchName = await GitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
 
-    // Check if this is a merge commit
-    const { isMerge, mergeInfo } = await this.detectMergeInfo(diff, branchName)
+    // Check if this is a merge commit (based on user context)
+    const { isMerge, mergeInfo } = await this.detectMergeInfo(diff, userMessage)
     if (isMerge) {
       parts.push('\nThis is a merge commit.')
       if (mergeInfo) {
