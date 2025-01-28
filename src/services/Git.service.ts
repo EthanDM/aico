@@ -43,7 +43,7 @@ class GitService {
   public async getRecentCommits(count: number = 5): Promise<GitCommit[]> {
     const log = await this.git.log([
       `-${count}`,
-      '--pretty=format:%h|%ar|%s|%d',
+      '--pretty=format:%h|%ar|%B|%d',
       '--date=relative',
     ])
 
@@ -59,13 +59,19 @@ class GitService {
       }
 
       const [hash, date, ...rest] = parts
-      const message = rest.slice(0, -1).join('|') // Join all parts except the last one
+      const message = rest.slice(0, -1).join('|').trim()
       const refs = rest[rest.length - 1]
+
+      const cleanMessage = message
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line)
+        .join('\n')
 
       return {
         hash: hash.trim(),
         date: date.trim(),
-        message: message.trim(),
+        message: cleanMessage,
         refs: refs && refs !== ' ' ? refs.trim() : undefined,
       }
     })
