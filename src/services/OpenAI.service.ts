@@ -303,6 +303,154 @@ class OpenAIService {
   }
 
   /**
+   * Determines the complexity of changes to select appropriate model.
+   *
+   * @param diff - The processed diff
+   * @returns Complexity score and factors considered
+   */
+  private assessChangeComplexity(diff: ProcessedDiff): {
+    score: number
+    factors: string[]
+  } {
+    const factors: string[] = []
+    let score = 0
+
+    // Factor 1: Number of files
+    if (diff.stats.filesChanged > 5) {
+      score += 3
+      factors.push('Large number of files changed')
+    } else if (diff.stats.filesChanged > 2) {
+      score += 2
+      factors.push('Multiple files changed')
+    }
+
+    // Factor 2: Size of changes
+    const totalChanges = diff.stats.additions + diff.stats.deletions
+    if (totalChanges > 200) {
+      score += 3
+      factors.push('Large volume of changes')
+    } else if (totalChanges > 50) {
+      score += 2
+      factors.push('Moderate volume of changes')
+    }
+
+    // Factor 3: Types of files changed
+    const filePatterns = {
+      test: /test|spec|\.(test|spec)\./i,
+      config: /\.(json|yml|yaml|config|conf|ini)$/i,
+      docs: /\.(md|txt|doc|rst)$/i,
+      core: /\.(ts|js|py|java|cpp|go|rs)$/i,
+    }
+
+    const fileTypes = new Set<string>()
+    diff.summary.split('\n').forEach((line) => {
+      if (line.startsWith('diff --git')) {
+        const filename = line.split(' ').pop()?.replace('b/', '') ?? ''
+        if (filePatterns.test.test(filename)) fileTypes.add('test')
+        if (filePatterns.config.test(filename)) fileTypes.add('config')
+        if (filePatterns.docs.test(filename)) fileTypes.add('docs')
+        if (filePatterns.core.test(filename)) fileTypes.add('core')
+      }
+    })
+
+    if (fileTypes.size > 2) {
+      score += 2
+      factors.push('Multiple types of files changed')
+    }
+
+    // Factor 4: Presence of complex patterns
+    const complexPatterns = [
+      'refactor',
+      'move',
+      'rename',
+      'restructure',
+      'optimize',
+      'dependency',
+      'breaking change',
+    ]
+
+    const summary = diff.summary.toLowerCase()
+    const hasComplexChanges = complexPatterns.some((pattern) =>
+      summary.includes(pattern)
+    )
+
+    if (hasComplexChanges) {
+      score += 2
+      factors.push('Complex change patterns detected')
+    }
+
+    return { score, factors }
+  }
+
+  /**
+   * Selects the appropriate model based on change complexity.
+   *
+   * @param diff - The processed diff
+   * @returns Selected model and reason
+   */
+  private selectModel(diff: ProcessedDiff): { model: string; reason: string } {
+    // If smart model selection is disabled, use configured model
+    if (this.config.smartModel === false) {
+      return {
+        model: this.config.model,
+        reason: 'Smart model selection disabled',
+      }
+    }
+
+    const { score, factors } = this.assessChangeComplexity(diff)
+
+    // Default to configured model
+    const configuredModel = this.config.model
+
+    // If user explicitly chose GPT-4, respect that
+    if (configuredModel.includes('gpt-4')) {
+      return {
+        model: configuredModel,
+        reason: 'User-selected GPT-4',
+      }
+    }
+
+    // In economy mode, use cheaper models
+    if (this.config.economyMode) {
+      if (score >= 5) {
+        return {
+          model: 'gpt-3.5-turbo',
+          reason: `High complexity (score: ${score}) but using GPT-3.5 due to economy mode. Factors: ${factors.join(
+            ', '
+          )}`,
+        }
+      }
+      return {
+        model: 'gpt-4o-mini',
+        reason: `Using mini model due to economy mode. Complexity score: ${score}`,
+      }
+    }
+
+    // Smart selection based on complexity
+    if (score >= 5) {
+      return {
+        model: 'gpt-4',
+        reason: `High complexity (score: ${score}). Factors: ${factors.join(
+          ', '
+        )}`,
+      }
+    } else if (score >= 3) {
+      return {
+        model: 'gpt-3.5-turbo',
+        reason: `Medium complexity (score: ${score}). Factors: ${factors.join(
+          ', '
+        )}`,
+      }
+    }
+
+    // For simple changes, use the configured model
+    return {
+      model: configuredModel,
+      reason: `Low complexity (score: ${score}). Using configured model.`,
+    }
+  }
+
+  /**
    * Generates a commit message for the given diff.
    *
    * @param diff - The diff to generate a commit message for.
@@ -314,6 +462,12 @@ class OpenAIService {
     userMessage?: string
   ): Promise<CommitMessage> {
     const prompt = await this.buildPrompt(diff, userMessage)
+
+    // Select appropriate model based on complexity
+    const { model, reason } = this.selectModel(diff)
+    LoggerService.debug(`\n🤖 Model Selection:`)
+    LoggerService.debug(`Selected model: ${model}`)
+    LoggerService.debug(`Reason: ${reason}`)
 
     const messages: ChatCompletionMessageParam[] = [
       {
@@ -331,18 +485,17 @@ class OpenAIService {
     ]
 
     LoggerService.debug('\n🔍 Building OpenAI Request:')
-    LoggerService.debug(`Model: ${this.config.model}`)
+    LoggerService.debug(`Model: ${model}`)
     LoggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
     LoggerService.debug(`Temperature: ${this.config.temperature}`)
     LoggerService.debug('Messages:')
     LoggerService.debug(`system: ${messages[0].content}`)
-    // Skip logging the full diff since it's already logged in workflow
     LoggerService.debug('user: <diff content omitted>')
 
     LoggerService.debug('\n📤 Sending request to OpenAI...')
 
     const response = await this.client.chat.completions.create({
-      model: this.config.model,
+      model, // Use selected model instead of config
       messages,
       max_tokens: this.config.maxTokens,
       temperature: this.config.temperature,

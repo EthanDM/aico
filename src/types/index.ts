@@ -12,6 +12,8 @@ export const ConfigSchema = z.object({
     topP: z.number().default(1),
     frequencyPenalty: z.number().default(0.2),
     presencePenalty: z.number().default(0),
+    smartModel: z.boolean().optional(),
+    economyMode: z.boolean().optional(),
   }),
   commit: z.object({
     maxTitleLength: z.number().default(72),

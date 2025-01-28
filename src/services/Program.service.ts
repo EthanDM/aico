@@ -8,6 +8,7 @@ import figlet from 'figlet'
 export interface ProgramOptions {
   debug?: boolean
   gpt4?: boolean
+  economy?: boolean
 }
 
 /**
@@ -16,12 +17,14 @@ export interface ProgramOptions {
 const defaultConfig: Config = {
   openai: {
     apiKey: process.env.OPENAI_KEY || '',
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o-mini', // Default to mini for basic changes
     maxTokens: 300,
     temperature: 0.5,
     topP: 1,
     frequencyPenalty: 0,
     presencePenalty: 0,
+    smartModel: true, // Enable smart model selection by default
+    economyMode: false, // Don't restrict to cheaper models by default
   },
   commit: {
     maxTitleLength: 72,
@@ -81,7 +84,11 @@ class ProgramService {
       .description(chalk.green('AI-powered git commit message generator'))
       .version('1.0.0')
       .option('-d, --debug', chalk.yellow('enable debug mode'))
-      .option('-4, --gpt4', chalk.yellow('use GPT-4 model'))
+      .option('-4, --gpt4', chalk.yellow('always use GPT-4 model'))
+      .option(
+        '-e, --economy',
+        chalk.yellow('use economy mode (cheaper models only)')
+      )
       .parse(process.argv)
 
     this.program.parse(process.argv)
@@ -103,7 +110,12 @@ class ProgramService {
         },
         openai: {
           ...defaultConfig.openai,
+          // If GPT-4 flag is set, always use GPT-4
           model: options.gpt4 ? 'gpt-4' : defaultConfig.openai.model,
+          // Disable smart selection if specific model is requested
+          smartModel: !options.gpt4,
+          // Enable economy mode if requested
+          economyMode: options.economy,
         },
       })
 
