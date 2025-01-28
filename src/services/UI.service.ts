@@ -7,6 +7,36 @@ import GitService from './Git.service'
  */
 class UIService {
   /**
+   * Lets user select which bullet points to keep in the commit message body.
+   *
+   * @param body - The commit message body
+   * @returns The filtered body with only selected bullet points
+   */
+  private async selectBulletPoints(body: string): Promise<string> {
+    const bullets = body
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => line.trim())
+
+    const { default: inquirer } = await import('inquirer')
+    const { selectedBullets } = await inquirer.prompt([
+      {
+        type: 'checkbox',
+        name: 'selectedBullets',
+        message:
+          'Select bullet points to keep (space to toggle, enter to confirm):',
+        choices: bullets.map((bullet) => ({
+          name: bullet,
+          checked: true, // All bullets start checked
+        })),
+        pageSize: 10,
+      },
+    ])
+
+    return selectedBullets.join('\n')
+  }
+
+  /**
    * Handles the user's action choice.
    *
    * @param action - The chosen action.
@@ -25,6 +55,31 @@ class UIService {
 
       case 'edit': {
         const { default: inquirer } = await import('inquirer')
+
+        // First ask what type of edit they want to do
+        const { editType } = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'editType',
+            message: 'How would you like to edit the commit message?',
+            choices: [
+              { name: 'Edit everything in text editor', value: 'full' },
+              { name: 'Select which bullet points to keep', value: 'bullets' },
+            ],
+          },
+        ])
+
+        if (editType === 'bullets' && message.body) {
+          const newBody = await this.selectBulletPoints(message.body)
+          await GitService.commit({
+            title: message.title,
+            body: newBody,
+          })
+          LoggerService.info('✅ Commit created successfully!')
+          return
+        }
+
+        // Full edit in text editor
         const { editedMessage } = await inquirer.prompt([
           {
             type: 'editor',
