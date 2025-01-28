@@ -8,6 +8,10 @@ import figlet from 'figlet'
 export interface ProgramOptions {
   debug?: boolean
   mini?: boolean
+  /**
+   * Skip user prompts for context and staging, automatically stage all changes
+   */
+  skip?: boolean
 }
 
 /**
@@ -82,6 +86,7 @@ class ProgramService {
       .version('1.0.0')
       .option('-d, --debug', chalk.yellow('enable debug mode'))
       .option('-m, --mini', chalk.yellow('use lighter GPT-4o-mini model'))
+      .option('-s, --skip', chalk.yellow('skip prompts and use GPT-4o'))
       .parse(process.argv)
 
     this.program.parse(process.argv)
@@ -112,7 +117,12 @@ class ProgramService {
       LoggerService.setConfig(config.debug)
       AppLogService.debugModeEnabled(options, config)
 
-      return { config, options }
+      // Pass skip option to services that need it
+      const serviceOptions = {
+        skip: options.skip || false,
+      }
+
+      return { config, options: serviceOptions }
     } catch (error) {
       AppLogService.configurationError(error)
       throw error

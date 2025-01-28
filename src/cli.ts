@@ -11,7 +11,7 @@ import LoggerService from './services/Logger.service'
 const main = async (): Promise<void> => {
   try {
     const { config, options } = await programService.initialize()
-    const workflow = createWorkflow(config)
+    const workflow = createWorkflow(config, options)
 
     const message = await workflow.generateCommitMessage()
     const result = await workflow.promptForAction(message)

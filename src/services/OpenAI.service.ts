@@ -10,13 +10,15 @@ type OpenAIConfig = Config['openai']
 /**
  * Service for interacting with OpenAI to generate commit messages.
  */
-class OpenAIService {
+export class OpenAIService {
   private client: OpenAI
   private config: OpenAIConfig
+  private options: { skip: boolean }
 
-  constructor(config: OpenAIConfig) {
+  constructor(config: OpenAIConfig, options: { skip: boolean }) {
     this.config = config
     this.client = new OpenAI({ apiKey: config.apiKey })
+    this.options = options
   }
 
   /**
@@ -317,7 +319,8 @@ class OpenAIService {
     const LARGE_DIFF_THRESHOLD = 30000 // characters
     if (
       diff.summary.length > LARGE_DIFF_THRESHOLD &&
-      !this.config.model.includes('mini')
+      !this.config.model.includes('mini') &&
+      !this.options.skip
     ) {
       LoggerService.warn('\n⚠️  Large diff detected!')
       LoggerService.info(
@@ -417,8 +420,12 @@ class OpenAIService {
  * Creates and exports a new OpenAI service instance.
  *
  * @param config - The OpenAI configuration
+ * @param options - Additional options for the OpenAI service
  * @returns An OpenAI service instance
  */
-export const createOpenAIService = (config: OpenAIConfig): OpenAIService => {
-  return new OpenAIService(config)
+export const createOpenAIService = (
+  config: OpenAIConfig,
+  options: { skip: boolean }
+): OpenAIService => {
+  return new OpenAIService(config, options)
 }

@@ -6,14 +6,22 @@ import { uiService } from './UI.service'
 import LoggerService from './Logger.service'
 import AppLogService from './AppLog.service'
 
+interface WorkflowOptions {
+  skip?: boolean
+}
+
 /**
  * Service for handling the commit message generation workflow.
  */
 class WorkflowService {
   private openai
+  private options: WorkflowOptions
 
-  constructor(config: Config) {
-    this.openai = createOpenAIService(config.openai)
+  constructor(config: Config, options: WorkflowOptions = {}) {
+    this.options = options
+    this.openai = createOpenAIService(config.openai, {
+      skip: options.skip || false,
+    })
   }
 
   /**
@@ -22,6 +30,11 @@ class WorkflowService {
    * @returns The user provided context, or undefined if none provided.
    */
   private async promptForContext(): Promise<string | undefined> {
+    // Skip the context prompt if skip flag is set
+    if (this.options.skip) {
+      return undefined
+    }
+
     const { default: inquirer } = await import('inquirer')
     const { context } = await inquirer.prompt([
       {
@@ -43,6 +56,12 @@ class WorkflowService {
     stagedCount: number,
     totalCount: number
   ): Promise<boolean> {
+    // If skip flag is set, stage all changes automatically
+    if (this.options.skip) {
+      await GitService.stageChanges(true)
+      return true
+    }
+
     LoggerService.warn('⚠️  Some changes are not staged for commit')
     LoggerService.info('   Staged: ' + chalk.green(`${stagedCount} files`))
     LoggerService.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
@@ -68,7 +87,7 @@ class WorkflowService {
 
     switch (action) {
       case 'stage':
-        await GitService.stageAll()
+        await GitService.stageChanges(true)
         return true
       case 'continue':
         return true
@@ -123,23 +142,28 @@ class WorkflowService {
       console.log('\nWorking directory status:')
       console.log(chalk.blue(status))
 
-      const { default: inquirer } = await import('inquirer')
-      const { action } = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'action',
-          message: 'Would you like to stage all changes?',
-          choices: [
-            { name: 'Stage all changes', value: 'stage' },
-            { name: 'Cancel', value: 'cancel' },
-          ],
-        },
-      ])
-
-      if (action === 'stage') {
-        await GitService.stageAll()
+      // If skip flag is set, stage all changes automatically
+      if (this.options.skip) {
+        await GitService.stageChanges(true)
       } else {
-        process.exit(0)
+        const { default: inquirer } = await import('inquirer')
+        const { action } = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'action',
+            message: 'Would you like to stage all changes?',
+            choices: [
+              { name: 'Stage all changes', value: 'stage' },
+              { name: 'Cancel', value: 'cancel' },
+            ],
+          },
+        ])
+
+        if (action === 'stage') {
+          await GitService.stageChanges(true)
+        } else {
+          process.exit(0)
+        }
       }
     }
 
@@ -181,6 +205,7 @@ class WorkflowService {
 
   /**
    * Prompts the user for action and handles their choice.
+   * If skip flag is set, automatically accepts and commits.
    *
    * @param message - The commit message to work with.
    * @param currentContext - The current user context if any
@@ -190,6 +215,12 @@ class WorkflowService {
     message: CommitMessage,
     currentContext?: string
   ): Promise<'exit' | 'restart' | void> {
+    // If skip flag is set, automatically accept and commit
+    if (this.options.skip) {
+      await GitService.commit(message)
+      return
+    }
+
     const { default: inquirer } = await import('inquirer')
     const { action } = await inquirer.prompt([
       {
@@ -226,7 +257,10 @@ class WorkflowService {
  * Creates and exports a workflow service instance.
  *
  * @param config - The program configuration
+ * @param options - The workflow options
  * @returns A workflow service instance
  */
-export const createWorkflow = (config: Config): WorkflowService =>
-  new WorkflowService(config)
+export const createWorkflow = (
+  config: Config,
+  options: WorkflowOptions = {}
+): WorkflowService => new WorkflowService(config, options)

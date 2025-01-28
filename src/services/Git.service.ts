@@ -1,6 +1,7 @@
-import { simpleGit, SimpleGit } from 'simple-git'
+import { SimpleGit, simpleGit } from 'simple-git'
 import DiffProcessor from '../processors/Diff.processor'
 import { ProcessedDiff, CommitMessage } from '../types'
+import LoggerService from './Logger.service'
 
 interface GitCommit {
   hash: string
@@ -96,7 +97,7 @@ class GitService {
    *
    * @returns The staged diff of the git repository.
    */
-  private async getStagedDiff(): Promise<string> {
+  public async getStagedDiff(): Promise<string> {
     return this.git.diff(['--staged'])
   }
 
@@ -105,7 +106,7 @@ class GitService {
    *
    * @returns The diff of all changes in the git repository.
    */
-  private async getAllDiff(): Promise<string> {
+  public async getAllDiff(): Promise<string> {
     return this.git.diff()
   }
 
@@ -179,19 +180,50 @@ class GitService {
   }
 
   /**
-   * Stages all changes in the working directory.
+   * Stages changes for commit.
+   * If skip is true, automatically stages all changes without prompting.
    */
-  public async stageAll(): Promise<void> {
-    await this.git.add('.')
+  public async stageChanges(skip: boolean = false): Promise<void> {
+    const hasChanges =
+      (await this.git.status()).modified.length > 0 ||
+      (await this.git.status()).not_added.length > 0
+
+    if (!hasChanges) {
+      throw new Error('No changes to commit')
+    }
+
+    if (skip) {
+      // Stage all changes automatically
+      await this.git.add('.')
+      LoggerService.info('✨ Automatically staged all changes')
+      return
+    }
+
+    // Show interactive staging prompt
+    const { default: inquirer } = await import('inquirer')
+    const { shouldStage } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'shouldStage',
+        message: 'Would you like to stage all changes?',
+        default: true,
+      },
+    ])
+
+    if (shouldStage) {
+      await this.git.add('.')
+      LoggerService.info('✨ Staged all changes')
+    } else {
+      throw new Error('Operation cancelled: No changes staged')
+    }
   }
 
   /**
-   * Commits the staged changes.
-   *
-   * @param message - The commit message.
+   * Creates a commit with the given message.
    */
-  public async commit(message: CommitMessage | string): Promise<void> {
+  public async commit(message: CommitMessage): Promise<void> {
     await this.git.commit(this.formatCommitMessage(message))
+    LoggerService.info('✨ Created commit successfully')
   }
 }
 
