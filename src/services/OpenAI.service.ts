@@ -313,6 +313,52 @@ class OpenAIService {
     diff: ProcessedDiff,
     userMessage?: string
   ): Promise<CommitMessage> {
+    // Check for very large diffs
+    const LARGE_DIFF_THRESHOLD = 30000 // characters
+    if (
+      diff.summary.length > LARGE_DIFF_THRESHOLD &&
+      !this.config.model.includes('mini')
+    ) {
+      LoggerService.warn('\n⚠️  Large diff detected!')
+      LoggerService.info(
+        `Size: ${Math.round(diff.summary.length / 1000)}K characters`
+      )
+
+      const { default: inquirer } = await import('inquirer')
+      const { action } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'action',
+          message: 'This is a large diff. Consider:',
+          choices: [
+            {
+              name: 'Continue with GPT-4o (better quality, slightly higher cost)',
+              value: 'continue',
+            },
+            {
+              name: 'Switch to GPT-4o-mini for this commit (faster, cheaper)',
+              value: 'mini',
+            },
+            {
+              name: 'Cancel (consider breaking into smaller commits)',
+              value: 'cancel',
+            },
+          ],
+        },
+      ])
+
+      if (action === 'cancel') {
+        throw new Error(
+          'Operation cancelled. Consider breaking changes into smaller, atomic commits.'
+        )
+      }
+
+      if (action === 'mini') {
+        this.config.model = 'gpt-4o-mini'
+        LoggerService.info('Switched to GPT-4o-mini for this commit')
+      }
+    }
+
     const prompt = await this.buildPrompt(diff, userMessage)
 
     // Log model info

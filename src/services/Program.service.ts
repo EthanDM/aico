@@ -17,7 +17,7 @@ const defaultConfig: Config = {
   openai: {
     apiKey: process.env.OPENAI_KEY || '',
     model: 'gpt-4o',
-    maxTokens: 300,
+    maxTokens: 500,
     temperature: 0.5,
     topP: 1,
     frequencyPenalty: 0,
