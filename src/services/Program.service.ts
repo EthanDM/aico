@@ -9,9 +9,13 @@ export interface ProgramOptions {
   debug?: boolean
   mini?: boolean
   /**
-   * Skip user prompts for context and staging, automatically stage all changes
+   * Whether to prompt for user context before generating commit message
    */
-  skip?: boolean
+  context?: boolean
+  /**
+   * Whether to disable auto-staging of changes (by default, changes are auto-staged)
+   */
+  noAutoStage?: boolean
 }
 
 /**
@@ -86,7 +90,14 @@ class ProgramService {
       .version('1.0.0')
       .option('-d, --debug', chalk.yellow('enable debug mode'))
       .option('-m, --mini', chalk.yellow('use lighter GPT-4o-mini model'))
-      .option('-s, --skip', chalk.yellow('skip prompts and auto-stage changes'))
+      .option(
+        '-c, --context',
+        chalk.yellow('prompt for user context before generating commit message')
+      )
+      .option(
+        '--no-auto-stage',
+        chalk.yellow('disable automatic staging of changes')
+      )
       .parse(process.argv)
 
     const options = this.program.opts<ProgramOptions>()
@@ -116,9 +127,10 @@ class ProgramService {
       LoggerService.setConfig(config.debug)
       AppLogService.debugModeEnabled(options, config)
 
-      // Pass skip option to services that need it
+      // Pass options to services that need them
       const serviceOptions = {
-        skip: options.skip || false,
+        context: options.context || false,
+        noAutoStage: options.noAutoStage || false,
       }
 
       return { config, options: serviceOptions }

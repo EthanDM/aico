@@ -7,15 +7,20 @@ import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 
 type OpenAIConfig = Config['openai']
 
+interface OpenAIOptions {
+  context?: boolean
+  noAutoStage?: boolean
+}
+
 /**
  * Service for interacting with OpenAI to generate commit messages.
  */
 export class OpenAIService {
   private client: OpenAI
   private config: OpenAIConfig
-  private options: { skip: boolean }
+  private options: OpenAIOptions
 
-  constructor(config: OpenAIConfig, options: { skip: boolean }) {
+  constructor(config: OpenAIConfig, options: OpenAIOptions) {
     this.config = config
     this.client = new OpenAI({ apiKey: config.apiKey })
     this.options = options
@@ -320,7 +325,7 @@ export class OpenAIService {
     if (
       diff.summary.length > LARGE_DIFF_THRESHOLD &&
       !this.config.model.includes('mini') &&
-      !this.options.skip
+      !this.options.context // If we're not prompting for context, treat it like auto mode
     ) {
       LoggerService.warn('\n⚠️  Large diff detected!')
       LoggerService.info(
@@ -425,7 +430,7 @@ export class OpenAIService {
  */
 export const createOpenAIService = (
   config: OpenAIConfig,
-  options: { skip: boolean }
+  options: OpenAIOptions
 ): OpenAIService => {
   return new OpenAIService(config, options)
 }

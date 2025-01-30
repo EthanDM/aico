@@ -89,8 +89,18 @@ aico --help
 ```bash
 Options:
   -d, --debug            Enable debug logging
+  -m, --mini            Use lighter GPT-4o-mini model
+  -c, --context         Prompt for user context before generating commit message
+  --no-auto-stage       Disable automatic staging of changes
   -h, --help            Display help information
 ```
+
+By default, aico will:
+
+1. Auto-stage all changes (use `--no-auto-stage` to disable)
+2. Skip user context prompt (use `-c` to enable)
+3. Always ask for confirmation before committing
+4. Use the full GPT-4o model (use `-m` for lighter model)
 
 ## Commit Message Format
 

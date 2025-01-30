@@ -7,7 +7,8 @@ import LoggerService from './Logger.service'
 import AppLogService from './AppLog.service'
 
 interface WorkflowOptions {
-  skip?: boolean
+  context?: boolean
+  noAutoStage?: boolean
 }
 
 /**
@@ -20,7 +21,8 @@ class WorkflowService {
   constructor(config: Config, options: WorkflowOptions = {}) {
     this.options = options
     this.openai = createOpenAIService(config.openai, {
-      skip: options.skip || false,
+      context: options.context || false,
+      noAutoStage: options.noAutoStage || false,
     })
   }
 
@@ -30,8 +32,8 @@ class WorkflowService {
    * @returns The user provided context, or undefined if none provided.
    */
   private async promptForContext(): Promise<string | undefined> {
-    // Skip the context prompt if skip flag is set
-    if (this.options.skip) {
+    // Only prompt for context if the context flag is set
+    if (!this.options.context) {
       return undefined
     }
 
@@ -40,7 +42,7 @@ class WorkflowService {
       {
         type: 'input',
         name: 'context',
-        message: 'Add any context to help guide the AI (press Enter to skip):',
+        message: 'Add any context to help guide the AI:',
       },
     ])
 
@@ -56,8 +58,8 @@ class WorkflowService {
     stagedCount: number,
     totalCount: number
   ): Promise<boolean> {
-    // If skip flag is set, stage all changes automatically
-    if (this.options.skip) {
+    // If auto-staging is enabled (default), stage all changes automatically
+    if (!this.options.noAutoStage) {
       await GitService.stageChanges(true)
       return true
     }
@@ -110,7 +112,7 @@ class WorkflowService {
   ): Promise<CommitMessage> {
     LoggerService.info('🔍 Analyzing changes...')
 
-    // If no message was provided via CLI, prompt for context
+    // If no message was provided via CLI, prompt for context if enabled
     if (!userMessage) {
       userMessage = await this.promptForContext()
     }
@@ -137,13 +139,13 @@ class WorkflowService {
     if (!hasStaged) {
       LoggerService.warn('No changes are currently staged for commit')
 
-      // Show status before prompting
+      // Show status before staging
       const status = await GitService.getShortStatus()
       console.log('\nWorking directory status:')
       console.log(chalk.blue(status))
 
-      // If skip flag is set, stage all changes automatically
-      if (this.options.skip) {
+      // If auto-staging is enabled (default), stage all changes automatically
+      if (!this.options.noAutoStage) {
         await GitService.stageChanges(true)
       } else {
         const { default: inquirer } = await import('inquirer')
@@ -215,12 +217,6 @@ class WorkflowService {
     message: CommitMessage,
     currentContext?: string
   ): Promise<'exit' | 'restart' | void> {
-    // If skip flag is set, automatically accept and commit
-    if (this.options.skip) {
-      await GitService.commit(message)
-      return
-    }
-
     const { default: inquirer } = await import('inquirer')
     const { action } = await inquirer.prompt([
       {
