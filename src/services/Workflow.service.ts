@@ -9,6 +9,7 @@ import AppLogService from './AppLog.service'
 interface WorkflowOptions {
   context?: boolean
   noAutoStage?: boolean
+  merge?: boolean
 }
 
 /**
@@ -22,6 +23,7 @@ class WorkflowService {
     this.options = {
       context: options.context || false,
       noAutoStage: options.noAutoStage || false,
+      merge: options.merge || false,
     }
     this.openai = createOpenAIService(config.openai, this.options)
   }
@@ -104,11 +106,13 @@ class WorkflowService {
    * Generates a commit message based on staged changes.
    *
    * @param userMessage - Optional user-provided message for guidance.
+   * @param isMerge - Whether this is a merge commit.
    * @returns The generated commit message.
    * @throws Error if there are no changes to commit.
    */
   public async generateCommitMessage(
-    userMessage?: string
+    userMessage?: string,
+    isMerge: boolean = false
   ): Promise<CommitMessage> {
     LoggerService.info('🔍 Analyzing changes...')
 
@@ -171,8 +175,8 @@ class WorkflowService {
     }
 
     // Get diffs after potential staging
-    let stagedDiff = await GitService.getStagedChanges()
-    const allDiff = await GitService.getAllChanges()
+    let stagedDiff = await GitService.getStagedChanges(this.options.merge)
+    const allDiff = await GitService.getAllChanges(this.options.merge)
 
     // Check if there are still unstaged changes
     if (stagedDiff.stats.filesChanged < allDiff.stats.filesChanged) {
@@ -187,7 +191,7 @@ class WorkflowService {
 
       // Refresh diff if we staged more changes
       if (stagedDiff.stats.filesChanged !== allDiff.stats.filesChanged) {
-        stagedDiff = await GitService.getStagedChanges()
+        stagedDiff = await GitService.getStagedChanges(this.options.merge)
       }
     }
 
@@ -198,7 +202,8 @@ class WorkflowService {
 
     const message = await this.openai.generateCommitMessage(
       stagedDiff,
-      userMessage
+      userMessage,
+      isMerge
     )
 
     AppLogService.commitMessageGenerated(message)

@@ -16,6 +16,10 @@ export interface ProgramOptions {
    * Whether to automatically stage changes (defaults to true)
    */
   autoStage?: boolean
+  /**
+   * Whether this is a merge commit
+   */
+  merge?: boolean
 }
 
 /**
@@ -98,6 +102,7 @@ class ProgramService {
         '--no-auto-stage',
         chalk.yellow('disable automatic staging of changes')
       )
+      .option('--merge', chalk.yellow('treat this as a merge commit'))
       .parse(process.argv)
 
     const options = this.program.opts<ProgramOptions>()
@@ -131,6 +136,7 @@ class ProgramService {
       const serviceOptions = {
         context: options.context || false,
         noAutoStage: options.autoStage === false,
+        merge: options.merge || false,
       }
 
       return { config, options: serviceOptions }

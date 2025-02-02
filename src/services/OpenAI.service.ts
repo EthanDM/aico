@@ -10,6 +10,7 @@ type OpenAIConfig = Config['openai']
 interface OpenAIOptions {
   context?: boolean
   noAutoStage?: boolean
+  merge?: boolean
 }
 
 /**
@@ -31,26 +32,19 @@ export class OpenAIService {
    *
    * @param diff - The processed diff
    * @param userMessage - Optional user-provided message for guidance
+   * @param isMerge - Whether this is explicitly a merge commit
    * @returns Information about the merge and conflicts, if any
    */
   private async detectMergeInfo(
     diff: ProcessedDiff,
-    userMessage?: string
+    userMessage?: string,
+    isMerge: boolean = false
   ): Promise<{
     isMerge: boolean
     mergeInfo?: string[]
     sourceBranch?: string
     targetBranch?: string
   }> {
-    // Check multiple indicators for merge commits
-    const isMergingBranch = await GitService.isMergingBranch()
-    const hasMergeParents = await GitService.hasMultipleParents()
-    const userRequestedMerge =
-      userMessage?.toLowerCase().includes('merge') ?? false
-
-    // Only consider it a merge if we have strong evidence
-    const isMerge = isMergingBranch || hasMergeParents || userRequestedMerge
-
     if (!isMerge) {
       return { isMerge: false }
     }
@@ -68,53 +62,11 @@ export class OpenAIService {
         mergeInfo.push(`Merging from ${sourceBranch} into ${targetBranch}`)
       }
     } catch (error) {
-      // If we can't get merge heads, continue without branch info
       LoggerService.debug(`Could not determine merge branches: ${error}`)
     }
 
-    // Look for conflict markers in the diff with more precise detection
-    const conflictFiles = new Set<string>()
-
-    // Split diff into lines and analyze
-    const diffLines = diff.summary.split('\n')
-    let currentFile: string | null = null
-    let hasConflictMarkers = false
-
-    for (const line of diffLines) {
-      // Track current file being analyzed
-      if (line.startsWith('diff --git')) {
-        if (currentFile && hasConflictMarkers) {
-          conflictFiles.add(currentFile)
-        }
-        currentFile = line.split(' ').pop()?.replace('b/', '') ?? null
-        hasConflictMarkers = false
-      }
-
-      // Check for conflict markers
-      if (
-        line.includes('<<<<<<<') ||
-        line.includes('=======') ||
-        line.includes('>>>>>>>') ||
-        line.includes('Conflicts:') ||
-        line.includes('resolved conflict') ||
-        line.includes('resolving conflict')
-      ) {
-        hasConflictMarkers = true
-        if (currentFile) {
-          conflictFiles.add(currentFile)
-        }
-      }
-    }
-
-    // Add conflict information to merge info
-    if (conflictFiles.size > 0) {
-      mergeInfo.push('\nFiles with resolved conflicts:')
-      Array.from(conflictFiles).forEach((file) => {
-        mergeInfo.push(`- ${file}`)
-      })
-    } else {
-      mergeInfo.push('\nClean merge with no conflicts')
-    }
+    // For merge commits, we'll just state it's a clean merge
+    mergeInfo.push('\nClean merge with no conflicts')
 
     return { isMerge, mergeInfo, sourceBranch, targetBranch }
   }
@@ -237,11 +189,19 @@ export class OpenAIService {
     // Process diff to remove binary content
     const processedDiff = this.processDiffContent(diff)
 
-    // Check if this is a merge commit (based on git state and user context)
-    const { isMerge, mergeInfo, sourceBranch, targetBranch } =
-      await this.detectMergeInfo(processedDiff, userMessage)
+    // Check if this is a merge commit
+    const {
+      isMerge: confirmed,
+      mergeInfo,
+      sourceBranch,
+      targetBranch,
+    } = await this.detectMergeInfo(
+      processedDiff,
+      userMessage,
+      this.options.merge
+    )
 
-    if (isMerge) {
+    if (confirmed) {
       parts.push('\nThis is a merge commit.')
       if (sourceBranch && targetBranch) {
         parts.push(`Merging from ${sourceBranch} into ${targetBranch}`)
@@ -339,11 +299,13 @@ export class OpenAIService {
    *
    * @param diff - The diff to generate a commit message for.
    * @param userMessage - Optional user-provided message for guidance.
+   * @param isMerge - Whether this is a merge commit.
    * @returns The commit message.
    */
   public async generateCommitMessage(
     diff: ProcessedDiff,
-    userMessage?: string
+    userMessage?: string,
+    isMerge: boolean = false
   ): Promise<CommitMessage> {
     // Check for very large diffs
     const LARGE_DIFF_THRESHOLD = 30000 // characters

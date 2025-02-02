@@ -123,17 +123,22 @@ class DiffProcessor {
   }
 
   /**
-   * Processes a raw diff string into a structured format.
+   * Process a git diff into a more structured format.
    *
-   * @param rawDiff - The raw diff string
-   * @returns A processed diff object
+   * @param diff - The raw git diff to process
+   * @param isMerge - Whether this is a merge commit
+   * @returns The processed diff
    */
-  public processDiff(rawDiff: string): ProcessedDiff {
+  public processDiff(diff: string, isMerge: boolean = false): ProcessedDiff {
     const CHARACTER_LIMIT = 20000
-    const filteredRawDiff = this.filterNoisyFiles(rawDiff)
-    const fileOperations = this.extractFileOperations(rawDiff)
-    const functionChanges = this.extractFunctionChanges(filteredRawDiff)
-    const dependencyChanges = this.extractDependencyChanges(filteredRawDiff)
+    const filteredRawDiff = new DiffProcessor().filterNoisyFiles(diff)
+    const fileOperations = new DiffProcessor().extractFileOperations(diff)
+    const functionChanges = new DiffProcessor().extractFunctionChanges(
+      filteredRawDiff
+    )
+    const dependencyChanges = new DiffProcessor().extractDependencyChanges(
+      filteredRawDiff
+    )
 
     // Extract additions and deletions from filtered diff
     const additions: string[] = []
@@ -149,19 +154,19 @@ class DiffProcessor {
       dependencyChanges,
       additions,
       deletions,
-      rawDiff,
-      filteredRawDiff,
+      rawDiff: diff,
+      filteredRawDiff: filteredRawDiff,
     }
 
     // Use filtered raw diff if under limit, otherwise use summary
     const shouldSummarize = filteredRawDiff.length > CHARACTER_LIMIT
     const summary = shouldSummarize
-      ? this.summarizeDiff(details)
+      ? new DiffProcessor().summarizeDiff(details)
       : filteredRawDiff
 
     // Calculate stats
     const stats = {
-      originalLength: rawDiff.length,
+      originalLength: diff.length,
       filteredLength: filteredRawDiff.length,
       processedLength: summary.length,
       filesChanged: fileOperations.length,
@@ -174,6 +179,7 @@ class DiffProcessor {
       summary,
       details,
       stats,
+      isMerge,
     }
   }
 }

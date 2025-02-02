@@ -58,6 +58,7 @@ export interface ProcessedDiff {
     deletions: number
     wasSummarized: boolean
   }
+  isMerge?: boolean
 }
 
 /**

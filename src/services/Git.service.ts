@@ -170,21 +170,25 @@ class GitService {
   /**
    * Gets the staged changes with processed diff information.
    *
+   * @param isMerge - Whether this is a merge commit
    * @returns The processed diff of staged changes.
    */
-  public async getStagedChanges(): Promise<ProcessedDiff> {
+  public async getStagedChanges(
+    isMerge: boolean = false
+  ): Promise<ProcessedDiff> {
     const diff = await this.getStagedDiff()
-    return DiffProcessor.processDiff(diff)
+    return DiffProcessor.processDiff(diff, isMerge)
   }
 
   /**
    * Gets all changes with processed diff information.
    *
+   * @param isMerge - Whether this is a merge commit
    * @returns The processed diff of all changes.
    */
-  public async getAllChanges(): Promise<ProcessedDiff> {
+  public async getAllChanges(isMerge: boolean = false): Promise<ProcessedDiff> {
     const diff = await this.getAllDiff()
-    return DiffProcessor.processDiff(diff)
+    return DiffProcessor.processDiff(diff, isMerge)
   }
 
   /**
