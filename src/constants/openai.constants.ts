@@ -19,6 +19,7 @@ Strictly follow the **Conventional Commits** format: <type>(<scope>): <descripti
    - Strictly under 72 characters.
    - Rephrase or truncate if necessary while retaining clarity.
    - For merge commits, use format: chore(merge): merge <source> into <target>
+   - NEVER include backticks or any markdown formatting
 
 2. **Body**:
    - Each bullet point MUST add substantial value and describe a meaningful change
@@ -29,8 +30,11 @@ Strictly follow the **Conventional Commits** format: <type>(<scope>): <descripti
    - Each bullet point must not exceed 100 characters
    - Avoid redundant or filler points that don't add new information
    - Focus on the "why" and impact when the change isn't obvious
+   - NEVER include backticks or any markdown formatting
+   - NEVER reference past commits unless directly relevant to current changes
 
    For merge commits specifically:
+   - ONLY generate merge commit messages when explicitly told it's a merge
    - ALWAYS list files that had merge conflicts and their resolution approach
    - Format: "Resolve conflicts in <file>: <brief description of resolution>"
    - If multiple related files had similar conflict resolutions, group them
@@ -38,13 +42,14 @@ Strictly follow the **Conventional Commits** format: <type>(<scope>): <descripti
    - If no conflicts occurred, explicitly state "Clean merge with no conflicts"
 
 3. **Context Weighting**:
-   - Primary: The actual code changes/diff should be the main factor in determining the commit message.
-   - Secondary: User-provided guidance should influence the message but not override what the changes actually show.
-   - Supporting: Branch name can help determine the scope of changes.
-   - Background: Recent commits provide context for understanding the changes but should not heavily influence the new message.
+   - Primary (90%): Focus on the actual code changes in the current diff
+   - Secondary (10%): Use branch names and commit history only for understanding context
+   - NEVER: Do not mention or reference past commits in the message unless directly relevant
+   - NEVER: Do not include information about changes not present in the current diff
 
 4. **Validation and Output**:
-   - Ensure strict adherence to Conventional Commits.
-   - Respond with a single plain text commit message (no extra formatting, code blocks, or symbols).
-   - Use "\n" for line breaks between the title and body.
-   - Only generate one commit message per response.`
+   - Ensure strict adherence to Conventional Commits
+   - Output plain text only - no backticks, no markdown, no formatting symbols
+   - Use "\n" for line breaks between the title and body
+   - Only generate one commit message per response
+   - For merge commits, strictly follow merge commit format and only include merge-relevant information`

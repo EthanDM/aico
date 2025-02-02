@@ -262,6 +262,68 @@ class GitService {
     await this.git.commit(this.formatCommitMessage(message))
     LoggerService.info('✨ Created commit successfully')
   }
+
+  /**
+   * Checks if we're currently in the middle of a merge operation.
+   *
+   * @returns True if we're in the middle of a merge, false otherwise.
+   */
+  public async isMergingBranch(): Promise<boolean> {
+    try {
+      // Check for MERGE_HEAD file existence
+      await this.git.raw(['rev-parse', '--verify', 'MERGE_HEAD'])
+      return true
+    } catch (error) {
+      return false
+    }
+  }
+
+  /**
+   * Checks if the current commit has multiple parents (indicating a merge).
+   *
+   * @returns True if the current commit has multiple parents, false otherwise.
+   */
+  public async hasMultipleParents(): Promise<boolean> {
+    try {
+      const parents = await this.git.raw(['log', '-1', '--pretty=%P'])
+      return parents.trim().split(' ').length > 1
+    } catch (error) {
+      return false
+    }
+  }
+
+  /**
+   * Gets the source and target branches of a merge operation.
+   *
+   * @returns Object containing source and target branch names, if available.
+   */
+  public async getMergeHeads(): Promise<{ source?: string; target?: string }> {
+    try {
+      // Get current (target) branch
+      const target = await this.getBranchName()
+
+      // Get source branch from MERGE_HEAD
+      const source = await this.git.raw(['rev-parse', '--verify', 'MERGE_HEAD'])
+      if (!source) {
+        return { target }
+      }
+
+      // Try to get the branch name for the source commit
+      const sourceBranch = await this.git.raw([
+        'name-rev',
+        '--name-only',
+        '--exclude=tags/*',
+        source.trim(),
+      ])
+
+      return {
+        source: sourceBranch.trim().replace('remotes/origin/', ''),
+        target: target.trim(),
+      }
+    } catch (error) {
+      return {}
+    }
+  }
 }
 
 export default new GitService()

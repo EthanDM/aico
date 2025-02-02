@@ -36,61 +36,87 @@ export class OpenAIService {
   private async detectMergeInfo(
     diff: ProcessedDiff,
     userMessage?: string
-  ): Promise<{ isMerge: boolean; mergeInfo?: string[] }> {
-    // Only detect merge if user explicitly mentions it
-    const isMerge = userMessage?.toLowerCase().includes('merge') ?? false
+  ): Promise<{
+    isMerge: boolean
+    mergeInfo?: string[]
+    sourceBranch?: string
+    targetBranch?: string
+  }> {
+    // Check multiple indicators for merge commits
+    const isMergingBranch = await GitService.isMergingBranch()
+    const hasMergeParents = await GitService.hasMultipleParents()
+    const userRequestedMerge =
+      userMessage?.toLowerCase().includes('merge') ?? false
+
+    // Only consider it a merge if we have strong evidence
+    const isMerge = isMergingBranch || hasMergeParents || userRequestedMerge
 
     if (!isMerge) {
       return { isMerge: false }
     }
 
     const mergeInfo: string[] = []
+    let sourceBranch: string | undefined
+    let targetBranch: string | undefined
 
-    // Look for conflict markers in the diff
-    const conflictFiles = diff.summary
-      .split('\n')
-      .filter(
-        (line) =>
-          line.includes('<<<<<<<') ||
-          line.includes('=======') ||
-          line.includes('>>>>>>>')
-      )
-      .map((line) => {
-        // Extract filename from diff line with more precise pattern
-        const match = line.match(/^(?:---|\+\+\+)\s+(?:a\/|b\/)?(.+?)(?:\t|$)/)
-        return match ? match[1] : null
-      })
-      .filter((file): file is string => file !== null)
+    // Try to get source and target branches
+    try {
+      const mergeHeads = await GitService.getMergeHeads()
+      if (mergeHeads.source && mergeHeads.target) {
+        sourceBranch = mergeHeads.source
+        targetBranch = mergeHeads.target
+        mergeInfo.push(`Merging from ${sourceBranch} into ${targetBranch}`)
+      }
+    } catch (error) {
+      // If we can't get merge heads, continue without branch info
+      LoggerService.debug(`Could not determine merge branches: ${error}`)
+    }
 
-    // Also look for typical merge resolution patterns
-    const resolutionFiles = diff.summary
-      .split('\n')
-      .filter(
-        (line) =>
-          line.includes('Conflicts resolved in') ||
-          line.includes('resolve conflict') ||
-          line.includes('resolving conflict')
-      )
-      .map((line) => {
-        const match = line.match(/(?:in|with)\s+([^\s]+)/)
-        return match ? match[1] : null
-      })
-      .filter((file): file is string => file !== null)
+    // Look for conflict markers in the diff with more precise detection
+    const conflictFiles = new Set<string>()
 
-    const allConflictFiles = [
-      ...new Set([...conflictFiles, ...resolutionFiles]),
-    ]
+    // Split diff into lines and analyze
+    const diffLines = diff.summary.split('\n')
+    let currentFile: string | null = null
+    let hasConflictMarkers = false
 
-    if (allConflictFiles.length > 0) {
-      mergeInfo.push('Files with resolved conflicts:')
-      allConflictFiles.forEach((file) => {
+    for (const line of diffLines) {
+      // Track current file being analyzed
+      if (line.startsWith('diff --git')) {
+        if (currentFile && hasConflictMarkers) {
+          conflictFiles.add(currentFile)
+        }
+        currentFile = line.split(' ').pop()?.replace('b/', '') ?? null
+        hasConflictMarkers = false
+      }
+
+      // Check for conflict markers
+      if (
+        line.includes('<<<<<<<') ||
+        line.includes('=======') ||
+        line.includes('>>>>>>>') ||
+        line.includes('Conflicts:') ||
+        line.includes('resolved conflict') ||
+        line.includes('resolving conflict')
+      ) {
+        hasConflictMarkers = true
+        if (currentFile) {
+          conflictFiles.add(currentFile)
+        }
+      }
+    }
+
+    // Add conflict information to merge info
+    if (conflictFiles.size > 0) {
+      mergeInfo.push('\nFiles with resolved conflicts:')
+      Array.from(conflictFiles).forEach((file) => {
         mergeInfo.push(`- ${file}`)
       })
     } else {
-      mergeInfo.push('Clean merge with no conflicts')
+      mergeInfo.push('\nClean merge with no conflicts')
     }
 
-    return { isMerge, mergeInfo }
+    return { isMerge, mergeInfo, sourceBranch, targetBranch }
   }
 
   /**
@@ -211,15 +237,17 @@ export class OpenAIService {
     // Process diff to remove binary content
     const processedDiff = this.processDiffContent(diff)
 
-    // Check if this is a merge commit (based on user context)
-    const { isMerge, mergeInfo } = await this.detectMergeInfo(
-      processedDiff,
-      userMessage
-    )
+    // Check if this is a merge commit (based on git state and user context)
+    const { isMerge, mergeInfo, sourceBranch, targetBranch } =
+      await this.detectMergeInfo(processedDiff, userMessage)
+
     if (isMerge) {
       parts.push('\nThis is a merge commit.')
+      if (sourceBranch && targetBranch) {
+        parts.push(`Merging from ${sourceBranch} into ${targetBranch}`)
+      }
       if (mergeInfo) {
-        parts.push('\nMerge conflict information:')
+        parts.push('\nMerge details:')
         parts.push(...mergeInfo)
       }
     }
@@ -233,12 +261,12 @@ export class OpenAIService {
       )
     }
 
-    LoggerService.debug(`🔍 Current branch: ${branchName}`)
-
-    // Add recent commits context
+    // Add recent commits context, but with clear instruction
     const recentCommits = await GitService.getRecentCommits(5)
     if (recentCommits.length > 0) {
-      parts.push('\nRecent commits for additional context:')
+      parts.push(
+        '\nRecent commits (for context only, do not reference unless directly relevant):'
+      )
       recentCommits.forEach((commit) => {
         parts.push(
           `${commit.hash} (${commit.date}): ${commit.message}${
@@ -248,11 +276,8 @@ export class OpenAIService {
       })
     }
 
-    LoggerService.debug('🔍 Recent commits:')
-    LoggerService.debug(parts.join('\n'))
-
-    // Add diff information
-    parts.push('\nCurrent changes:')
+    // Add diff information with clear priority
+    parts.push('\nCurrent changes (primary focus for commit message):')
     if (processedDiff.stats.wasSummarized) {
       parts.push(processedDiff.summary)
       parts.push(`\nFiles changed: ${processedDiff.stats.filesChanged}`)
