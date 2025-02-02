@@ -1,0 +1,21 @@
+{
+  "openai": {
+    "model": "gpt-4o-mini",
+    "maxTokens": 500,
+    "temperature": 0.5,
+    "topP": 1,
+    "frequencyPenalty": 0,
+    "presencePenalty": 0
+  },
+  "commit": {
+    "maxTitleLength": 72,
+    "maxBodyLength": 500,
+    "wrapBody": 72,
+    "includeBody": true,
+    "includeFooter": true
+  },
+  "debug": {
+    "enabled": false,
+    "logLevel": "INFO"
+  }
+}

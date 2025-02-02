@@ -33,29 +33,63 @@ npm install aico
 
 ## Configuration
 
-Create a configuration file at `~/.config/aico/config.json`:
+AICO can be configured in several ways:
+
+### Command Line Options
+
+```bash
+Options:
+  -d, --debug            Enable debug logging
+  -f, --full            Use full GPT-4o model for this commit
+  -c, --context         Prompt for user context before generating commit message
+  --no-auto-stage       Disable automatic staging of changes
+  --merge               Treat this as a merge commit
+  --set-default-model   Set the default model (gpt-4o or gpt-4o-mini)
+```
+
+### Configuration File
+
+AICO looks for a configuration file at `~/.config/aico/config.json`. You can create this file manually or use the `--set-default-model` option to manage model settings.
+
+See `config.example.json` in the repository for a complete example of available options.
+
+#### Model Configuration
+
+By default, AICO uses the GPT-4o-mini model for better performance and lower resource usage. You can:
+
+- Use the full GPT-4o model for a single commit: `aico -f` or `aico --full`
+- Set GPT-4o as your default: `aico --set-default-model gpt-4o`
+- Set GPT-4o-mini as your default: `aico --set-default-model gpt-4o-mini`
+
+The configuration file supports the following options:
 
 ```json
 {
   "openai": {
-    "apiKey": "your-api-key-here",
-    "model": "gpt-3.5-turbo",
-    "maxTokens": 500,
-    "temperature": 0.7,
-    "topP": 1,
-    "frequencyPenalty": 0,
-    "presencePenalty": 0
+    "model": "gpt-4o-mini", // Model to use (gpt-4o or gpt-4o-mini)
+    "maxTokens": 500, // Maximum tokens in response
+    "temperature": 0.5, // Response creativity (0-1)
+    "topP": 1, // Response diversity
+    "frequencyPenalty": 0, // Penalty for repetition
+    "presencePenalty": 0 // Penalty for new topics
   },
-  "git": {
-    "skipHooks": false
+  "commit": {
+    "maxTitleLength": 72, // Maximum length of commit title
+    "maxBodyLength": 500, // Maximum length of commit body
+    "wrapBody": 72, // Wrap commit body at this column
+    "includeBody": true, // Include body in commit message
+    "includeFooter": true // Include footer in commit message
+  },
+  "debug": {
+    "enabled": false, // Enable debug logging
+    "logLevel": "INFO" // Log level (DEBUG, INFO, WARN, ERROR)
   }
 }
 ```
 
-Alternatively, you can use environment variables:
+### Environment Variables
 
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `OPENAI_MODEL`: The model to use (default: "gpt-3.5-turbo")
+- `OPENAI_KEY`: Your OpenAI API key (required)
 
 ## Usage
 

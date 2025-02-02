@@ -2,6 +2,7 @@ import { Command } from 'commander'
 import { Config, ConfigSchema } from '../types/index'
 import LoggerService from './Logger.service'
 import AppLogService from './AppLog.service'
+import ConfigService from './Config.service'
 import chalk from 'chalk'
 import figlet from 'figlet'
 
@@ -20,6 +21,8 @@ export interface ProgramOptions {
    * Whether this is a merge commit
    */
   merge?: boolean
+  full?: boolean
+  setDefaultModel?: string
 }
 
 /**
@@ -28,7 +31,7 @@ export interface ProgramOptions {
 const defaultConfig: Config = {
   openai: {
     apiKey: process.env.OPENAI_KEY || '',
-    model: 'gpt-4o',
+    model: 'gpt-4o-mini',
     maxTokens: 500,
     temperature: 0.5,
     topP: 1,
@@ -93,7 +96,10 @@ class ProgramService {
       .description(chalk.green('AI-powered git commit message generator'))
       .version('1.0.0')
       .option('-d, --debug', chalk.yellow('enable debug mode'))
-      .option('-m, --mini', chalk.yellow('use lighter GPT-4o-mini model'))
+      .option(
+        '-f, --full',
+        chalk.yellow('use full GPT-4o model for this commit')
+      )
       .option(
         '-c, --context',
         chalk.yellow('prompt for user context before generating commit message')
@@ -103,6 +109,10 @@ class ProgramService {
         chalk.yellow('disable automatic staging of changes')
       )
       .option('--merge', chalk.yellow('treat this as a merge commit'))
+      .option(
+        '--set-default-model <model>',
+        chalk.yellow('set the default model (gpt-4o or gpt-4o-mini)')
+      )
       .parse(process.argv)
 
     const options = this.program.opts<ProgramOptions>()
@@ -114,8 +124,17 @@ class ProgramService {
 
     // Initialize configuration
     try {
+      // Handle setting default model if requested
+      if (options.setDefaultModel) {
+        ConfigService.setDefaultModel(options.setDefaultModel)
+        process.exit(0)
+      }
+
+      // Load saved config and merge with defaults
+      const savedConfig = ConfigService.loadConfig()
       const config = ConfigSchema.parse({
         ...defaultConfig,
+        ...savedConfig,
         debug: {
           ...defaultConfig.debug,
           enabled: options.debug,
@@ -123,8 +142,11 @@ class ProgramService {
         },
         openai: {
           ...defaultConfig.openai,
-          // Use mini model if requested, otherwise stick with GPT-4o
-          model: options.mini ? 'gpt-4o-mini' : defaultConfig.openai.model,
+          ...savedConfig.openai,
+          // Override with full model if requested
+          model: options.full
+            ? 'gpt-4o'
+            : savedConfig.openai?.model || defaultConfig.openai.model,
         },
       })
 
