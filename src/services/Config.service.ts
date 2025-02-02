@@ -78,6 +78,26 @@ class ConfigService {
     ConfigService.saveConfig(config)
     LoggerService.info(`Default model set to ${model}`)
   }
+
+  /**
+   * Sets the OpenAI API key in the configuration
+   */
+  public static setApiKey(apiKey: string): void {
+    if (!apiKey.trim()) {
+      throw new Error('API key cannot be empty')
+    }
+
+    const existingConfig = ConfigService.loadConfig()
+    const config: Partial<Config> = {
+      openai: {
+        ...existingConfig.openai,
+        apiKey,
+      } as Config['openai'],
+    }
+
+    ConfigService.saveConfig(config)
+    LoggerService.info('OpenAI API key saved successfully')
+  }
 }
 
 export default ConfigService

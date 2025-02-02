@@ -31,6 +31,24 @@ npm install -g aico
 npm install aico
 ```
 
+### Setting up your OpenAI API Key
+
+AICO requires an OpenAI API key to function. You have two options to provide it:
+
+1. **Recommended: Save it in your configuration** (one-time setup)
+
+   ```bash
+   aico --set-api-key YOUR_API_KEY
+   ```
+
+   This saves your API key securely in `~/.config/aico/config.json`
+
+2. **Alternative: Use an environment variable**
+   ```bash
+   export OPENAI_KEY=YOUR_API_KEY
+   ```
+   You'll need to set this each time you open a new terminal, or add it to your shell's configuration file.
+
 ## Configuration
 
 AICO can be configured in several ways:
@@ -45,6 +63,7 @@ Options:
   --no-auto-stage       Disable automatic staging of changes
   --merge               Treat this as a merge commit
   --set-default-model   Set the default model (gpt-4o or gpt-4o-mini)
+  --set-api-key         Set your OpenAI API key
 ```
 
 ### Configuration File
