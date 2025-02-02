@@ -19,11 +19,11 @@ class WorkflowService {
   private options: WorkflowOptions
 
   constructor(config: Config, options: WorkflowOptions = {}) {
-    this.options = options
-    this.openai = createOpenAIService(config.openai, {
+    this.options = {
       context: options.context || false,
       noAutoStage: options.noAutoStage || false,
-    })
+    }
+    this.openai = createOpenAIService(config.openai, this.options)
   }
 
   /**
@@ -144,10 +144,8 @@ class WorkflowService {
       console.log('\nWorking directory status:')
       console.log(chalk.blue(status))
 
-      // If auto-staging is enabled (default), stage all changes automatically
-      if (!this.options.noAutoStage) {
-        await GitService.stageChanges(true)
-      } else {
+      // If auto-staging is disabled, prompt user for action
+      if (this.options.noAutoStage) {
         const { default: inquirer } = await import('inquirer')
         const { action } = await inquirer.prompt([
           {
@@ -166,6 +164,9 @@ class WorkflowService {
         } else {
           process.exit(0)
         }
+      } else {
+        // Auto-staging is enabled (default)
+        await GitService.stageChanges(true)
       }
     }
 

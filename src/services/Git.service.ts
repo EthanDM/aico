@@ -27,12 +27,31 @@ class GitService {
   }
 
   /**
+   * Checks if the repository has any commits.
+   *
+   * @returns True if the repository has at least one commit, false otherwise.
+   */
+  private async hasCommits(): Promise<boolean> {
+    try {
+      await this.git.revparse(['HEAD'])
+      return true
+    } catch (error) {
+      return false
+    }
+  }
+
+  /**
    * Gets the current branch name.
    *
-   * @returns The current branch name.
+   * @returns The current branch name or 'main' for new repositories.
    */
   public async getBranchName(): Promise<string> {
-    return this.git.revparse(['--abbrev-ref', 'HEAD'])
+    try {
+      return await this.git.revparse(['--abbrev-ref', 'HEAD'])
+    } catch (error) {
+      // For new repositories without commits, default to 'main'
+      return 'main'
+    }
   }
 
   /**
@@ -42,6 +61,10 @@ class GitService {
    * @returns Array of recent commits with their details.
    */
   public async getRecentCommits(count: number = 5): Promise<GitCommit[]> {
+    if (!(await this.hasCommits())) {
+      return []
+    }
+
     const log = await this.git.log([
       `-${count}`,
       '--pretty=format:%h|%ar|%B|%d',
@@ -98,6 +121,15 @@ class GitService {
    * @returns The staged diff of the git repository.
    */
   public async getStagedDiff(): Promise<string> {
+    if (!(await this.hasCommits())) {
+      // For new repositories, get the diff of staged changes against an empty tree
+      const status = await this.git.status()
+      if (status.staged.length === 0) {
+        return ''
+      }
+      // Use --cached to show staged changes
+      return this.git.raw(['diff', '--cached'])
+    }
     return this.git.diff(['--staged'])
   }
 
@@ -107,6 +139,11 @@ class GitService {
    * @returns The diff of all changes in the git repository.
    */
   public async getAllDiff(): Promise<string> {
+    if (!(await this.hasCommits())) {
+      // For new repositories, compare against the empty tree object
+      const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904' // git hash-object -t tree /dev/null
+      return this.git.raw(['diff', emptyTree])
+    }
     return this.git.diff()
   }
 

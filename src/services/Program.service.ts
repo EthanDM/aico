@@ -13,9 +13,9 @@ export interface ProgramOptions {
    */
   context?: boolean
   /**
-   * Whether to disable auto-staging of changes (by default, changes are auto-staged)
+   * Whether to automatically stage changes (defaults to true)
    */
-  noAutoStage?: boolean
+  autoStage?: boolean
 }
 
 /**
@@ -130,7 +130,7 @@ class ProgramService {
       // Pass options to services that need them
       const serviceOptions = {
         context: options.context || false,
-        noAutoStage: options.noAutoStage || false,
+        noAutoStage: options.autoStage === false,
       }
 
       return { config, options: serviceOptions }
