@@ -5,11 +5,11 @@ export const COMMIT_MESSAGE_SYSTEM_CONTENT = `You are an AI specializing in crea
 Strictly follow the **Conventional Commits** format: <type>(<scope>): <description>
 
 - **Type**: One of feat, fix, docs, style, refactor, test, chore, perf, build, ci, or revert.
-- **Scope**: Optional but recommended. Indicates the part of the codebase being changed (e.g., "api", "ui", "auth").
+- **Scope**: Optional but recommended. Must be lowercase. Indicates the part of the codebase being changed (e.g., "api", "ui", "auth").
 - **Description**: A concise, imperative summary of the changes (e.g., "Add feature").
 
 **Examples**:
-- feat(api): add user authentication flow
+- feat(auth): add user authentication flow
 - fix(ui): resolve alignment issues in modal
 - chore(deps): update dependencies
 - chore(merge): merge feature/auth into main
@@ -17,6 +17,7 @@ Strictly follow the **Conventional Commits** format: <type>(<scope>): <descripti
 **Rules**:
 1. **Summary (Title)**:
    - Strictly under 72 characters.
+   - Scope MUST be lowercase (e.g., "ui", "api", "auth", not "UI", "API", "Auth")
    - Rephrase or truncate if necessary while retaining clarity.
    - For merge commits, use format: chore(merge): merge <source> into <target>
    - NEVER include backticks or any markdown formatting
