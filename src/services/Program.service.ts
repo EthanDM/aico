@@ -24,6 +24,10 @@ export interface ProgramOptions {
   full?: boolean
   setDefaultModel?: string
   setApiKey?: string
+  /**
+   * Whether to generate a branch name instead of a commit message
+   */
+  branch?: boolean
 }
 
 /**
@@ -115,6 +119,10 @@ class ProgramService {
         chalk.yellow('set the default model (gpt-4o or gpt-4o-mini)')
       )
       .option('--set-api-key <key>', chalk.yellow('set your OpenAI API key'))
+      .option(
+        '-b, --branch',
+        chalk.yellow('generate a branch name instead of a commit message')
+      )
       .parse(process.argv)
 
     const options = this.program.opts<ProgramOptions>()
@@ -174,6 +182,7 @@ class ProgramService {
         context: options.context || false,
         noAutoStage: options.autoStage === false,
         merge: options.merge || false,
+        branch: options.branch || false,
       }
 
       return { config, options: serviceOptions }

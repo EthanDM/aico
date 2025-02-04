@@ -324,6 +324,125 @@ class UIService {
         return { result: 'exit' }
     }
   }
+
+  /**
+   * Prompts the user for action on the commit message.
+   *
+   * @returns The chosen action
+   */
+  public async promptForAction(): Promise<string> {
+    const { default: inquirer } = await import('inquirer')
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'What would you like to do?',
+        choices: [
+          { name: 'Accept and commit', value: 'accept' },
+          { name: 'Edit message', value: 'edit' },
+          { name: 'Regenerate message', value: 'regenerate' },
+          { name: 'View full diff', value: 'diff' },
+          { name: 'Cancel', value: 'cancel' },
+        ],
+      },
+    ])
+
+    return action
+  }
+
+  /**
+   * Prompts the user for action on the generated branch name.
+   *
+   * @returns The chosen action for branch name
+   */
+  public async promptForBranchAction(): Promise<string> {
+    const { default: inquirer } = await import('inquirer')
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'What would you like to do with this branch name?',
+        choices: [
+          { name: 'Create branch and switch to it', value: 'create' },
+          { name: 'Copy to clipboard', value: 'copy' },
+          { name: 'Regenerate with new context', value: 'regenerate' },
+          { name: 'Cancel', value: 'cancel' },
+        ],
+      },
+    ])
+
+    return action
+  }
+
+  /**
+   * Handles the user's action choice for branch name.
+   *
+   * @param action - The chosen action
+   * @param branchName - The generated branch name
+   * @returns The result of the action
+   */
+  public async handleBranchAction(
+    action: string,
+    branchName: string
+  ): Promise<{ result: 'exit' | 'restart' | void; newContext?: string }> {
+    const { default: inquirer } = await import('inquirer')
+
+    switch (action) {
+      case 'create': {
+        const { confirmed } = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'confirmed',
+            message: `Create and switch to branch '${branchName}'?`,
+            default: true,
+          },
+        ])
+
+        if (confirmed) {
+          await GitService.createAndCheckoutBranch(branchName)
+          LoggerService.info('✅ Created and switched to new branch!')
+        }
+        return { result: undefined }
+      }
+
+      case 'copy': {
+        // Use pbcopy on macOS, clip on Windows, or xclip/xsel on Linux
+        const { exec } = await import('child_process')
+        const platform = process.platform
+        const command =
+          platform === 'darwin'
+            ? `echo "${branchName}" | pbcopy`
+            : platform === 'win32'
+            ? `echo ${branchName} | clip`
+            : `echo "${branchName}" | xclip -selection clipboard`
+
+        exec(command, (error) => {
+          if (error) {
+            LoggerService.error('Failed to copy to clipboard')
+          } else {
+            LoggerService.info('✅ Branch name copied to clipboard!')
+          }
+        })
+        return { result: undefined }
+      }
+
+      case 'regenerate': {
+        const newContext = await this.promptForRegenerationContext()
+        return {
+          result: 'restart',
+          newContext: newContext,
+        }
+      }
+
+      case 'cancel':
+        LoggerService.info('👋 Operation cancelled')
+        return { result: 'exit' }
+
+      default:
+        LoggerService.error(`Unknown action: ${action}`)
+        return { result: 'exit' }
+    }
+  }
 }
 
 // Export a single instance

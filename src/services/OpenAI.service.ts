@@ -406,6 +406,128 @@ export class OpenAIService {
 
     return this.parseCommitMessage(content)
   }
+
+  /**
+   * Generates a branch name based on the provided context.
+   *
+   * @param context - User provided context for the branch name
+   * @param diff - Optional diff to consider when generating the branch name
+   * @returns The generated branch name
+   */
+  public async generateBranchName(
+    context: string,
+    diff?: ProcessedDiff
+  ): Promise<string> {
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: `You are an expert at creating meaningful and well-structured git branch names.
+Your task is to analyze the user's intent and create a branch name that best represents the work to be done.
+
+Follow these branch naming rules and guidelines:
+- Use kebab-case (lowercase with hyphens)
+- Start with an appropriate type prefix:
+  * feature/ - for new features or significant enhancements
+  * fix/ - for bug fixes
+  * refactor/ - for code restructuring without behavior changes
+  * chore/ - for maintenance tasks, dependency updates, etc.
+  * style/ - for purely cosmetic changes
+  * docs/ - for documentation changes
+- Keep it concise but descriptive (max 60 characters)
+- Focus on the core purpose, not implementation details
+- Use clear, meaningful terms that other developers will understand
+- Avoid repeating information that's already in the prefix
+- No special characters except hyphens and forward slashes
+
+IMPORTANT: Respond ONLY with the branch name, nothing else. No explanation, no quotes, just the branch name.
+
+DO NOT simply rephrase the user's input. Instead, analyze their intent and create a branch name that:
+1. Uses the most appropriate type prefix based on the nature of the work
+2. Captures the essential purpose in a clear, professional way
+3. Is easy for other developers to understand
+4. Follows standard Git branch naming conventions`,
+      },
+      {
+        role: 'user',
+        content: await this.buildBranchPrompt(context, diff),
+      },
+    ]
+
+    try {
+      const completion = await this.client.chat.completions.create({
+        model: this.config.model,
+        messages,
+        temperature: this.config.temperature,
+        max_tokens: 60,
+        top_p: this.config.topP,
+        frequency_penalty: this.config.frequencyPenalty,
+        presence_penalty: this.config.presencePenalty,
+      })
+
+      const response = completion.choices[0]?.message?.content?.trim() || ''
+
+      // Extract just the branch name - take the first line and clean it
+      const branchName = response
+        .split('\n')[0]
+        .trim()
+        // Remove any quotes or backticks
+        .replace(/[`'"]/g, '')
+        // Replace any invalid characters with hyphens
+        .replace(/[^a-z0-9/-]/g, '-')
+        // Replace multiple consecutive hyphens with a single one
+        .replace(/-+/g, '-')
+        // Remove any leading or trailing hyphens
+        .replace(/^-+|-+$/g, '')
+
+      // Ensure it starts with a valid prefix if it doesn't already
+      const validPrefixes = [
+        'feature/',
+        'fix/',
+        'refactor/',
+        'chore/',
+        'style/',
+        'docs/',
+      ]
+      if (!validPrefixes.some((prefix) => branchName.startsWith(prefix))) {
+        // Default to chore/ if no valid prefix is present
+        return 'chore/' + branchName
+      }
+
+      return branchName
+    } catch (error) {
+      LoggerService.error('Failed to generate branch name')
+      throw error
+    }
+  }
+
+  /**
+   * Builds the prompt for branch name generation.
+   *
+   * @param context - User provided context
+   * @param diff - Optional diff to consider
+   * @returns The prompt for the OpenAI API
+   */
+  private async buildBranchPrompt(
+    context: string,
+    diff?: ProcessedDiff
+  ): Promise<string> {
+    const parts = ['Generate a branch name based on the following context:']
+    parts.push(`\nContext: ${context}`)
+
+    if (diff) {
+      parts.push('\nChanges summary:')
+      if (diff.stats.wasSummarized) {
+        parts.push(diff.summary)
+        parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
+        parts.push(`Additions: ${diff.stats.additions}`)
+        parts.push(`Deletions: ${diff.stats.deletions}`)
+      } else {
+        parts.push(diff.summary)
+      }
+    }
+
+    return parts.join('\n')
+  }
 }
 
 /**

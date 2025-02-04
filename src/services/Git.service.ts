@@ -328,6 +328,37 @@ class GitService {
       return {}
     }
   }
+
+  /**
+   * Gets the count of staged and total changes.
+   *
+   * @returns Object containing counts of staged and total changes
+   */
+  public async getChangeCount(): Promise<{
+    stagedCount: number
+    totalCount: number
+  }> {
+    const status = await this.getStatus()
+    return {
+      stagedCount: status.staged.length,
+      totalCount: status.staged.length + status.modified.length,
+    }
+  }
+
+  /**
+   * Creates a new branch and switches to it.
+   *
+   * @param branchName - The name of the branch to create
+   */
+  public async createAndCheckoutBranch(branchName: string): Promise<void> {
+    try {
+      await this.git.checkoutLocalBranch(branchName)
+      LoggerService.debug(`Created and switched to branch: ${branchName}`)
+    } catch (error) {
+      LoggerService.error(`Failed to create branch: ${error}`)
+      throw error
+    }
+  }
 }
 
 export default new GitService()

@@ -10,6 +10,7 @@ interface WorkflowOptions {
   context?: boolean
   noAutoStage?: boolean
   merge?: boolean
+  branch?: boolean
 }
 
 /**
@@ -24,18 +25,22 @@ class WorkflowService {
       context: options.context || false,
       noAutoStage: options.noAutoStage || false,
       merge: options.merge || false,
+      branch: options.branch || false,
     }
     this.openai = createOpenAIService(config.openai, this.options)
   }
 
   /**
-   * Prompts the user for optional context/guidance for the commit message.
+   * Prompts the user for optional context/guidance.
    *
-   * @returns The user provided context, or undefined if none provided.
+   * @param required - Whether context input is required
+   * @returns The user provided context, or undefined if none provided
    */
-  private async promptForContext(): Promise<string | undefined> {
-    // Only prompt for context if the context flag is set
-    if (!this.options.context) {
+  private async promptForContext(
+    required: boolean = false
+  ): Promise<string | undefined> {
+    // Only prompt for context if the context flag is set or it's required
+    if (!this.options.context && !required) {
       return undefined
     }
 
@@ -44,7 +49,13 @@ class WorkflowService {
       {
         type: 'input',
         name: 'context',
-        message: 'Add any context to help guide the AI:',
+        message: 'Add context to help guide the AI:',
+        validate: (input: string) => {
+          if (required && !input.trim()) {
+            return 'Context is required for branch name generation'
+          }
+          return true
+        },
       },
     ])
 
@@ -103,151 +114,115 @@ class WorkflowService {
   }
 
   /**
-   * Generates a commit message based on staged changes.
+   * Generates a branch name based on user context and optionally the current changes.
    *
-   * @param userMessage - Optional user-provided message for guidance.
-   * @param isMerge - Whether this is a merge commit.
-   * @returns The generated commit message.
-   * @throws Error if there are no changes to commit.
+   * @param currentContext - Optional existing context to use
+   * @returns The generated branch name
    */
-  public async generateCommitMessage(
-    userMessage?: string,
-    isMerge: boolean = false
-  ): Promise<CommitMessage> {
-    LoggerService.info('🔍 Analyzing changes...')
-
-    // If no message was provided via CLI, prompt for context if enabled
-    if (!userMessage) {
-      userMessage = await this.promptForContext()
+  public async generateBranchName(currentContext?: string): Promise<string> {
+    // Get context for branch name
+    const context = currentContext || (await this.promptForContext(true))
+    if (!context) {
+      throw new Error('Context is required for branch name generation')
     }
 
-    if (userMessage) {
-      LoggerService.debug(`\n💬 User provided message: ${userMessage}`)
-    }
+    let diff: ProcessedDiff | undefined
 
-    // Check both staged and all changes
-    const [hasStaged, hasChanges] = await Promise.all([
-      GitService.hasStaged(),
-      GitService.hasChanges(),
-    ])
-
-    LoggerService.debug('\n📋 Git Status:')
-    LoggerService.debug(`Has staged changes: ${hasStaged}`)
-    LoggerService.debug(`Has working changes: ${hasChanges}`)
-
-    // Handle different staging states
-    if (!hasChanges) {
-      throw new Error('No changes detected in the working directory')
-    }
-
-    if (!hasStaged) {
-      LoggerService.warn('No changes are currently staged for commit')
-
-      // Show status before staging
-      const status = await GitService.getShortStatus()
-      console.log('\nWorking directory status:')
-      console.log(chalk.blue(status))
-
-      // If auto-staging is disabled, prompt user for action
-      if (this.options.noAutoStage) {
-        const { default: inquirer } = await import('inquirer')
-        const { action } = await inquirer.prompt([
-          {
-            type: 'list',
-            name: 'action',
-            message: 'Would you like to stage all changes?',
-            choices: [
-              { name: 'Stage all changes', value: 'stage' },
-              { name: 'Cancel', value: 'cancel' },
-            ],
-          },
-        ])
-
-        if (action === 'stage') {
-          await GitService.stageChanges(true)
-        } else {
-          process.exit(0)
-        }
-      } else {
-        // Auto-staging is enabled (default)
-        await GitService.stageChanges(true)
+    try {
+      // If there are staged changes, include them in the context
+      const { stagedCount } = await GitService.getChangeCount()
+      if (stagedCount > 0) {
+        diff = await GitService.getStagedChanges()
+        AppLogService.gitStats(diff)
       }
-    }
-
-    // Get diffs after potential staging
-    let stagedDiff = await GitService.getStagedChanges(this.options.merge)
-    const allDiff = await GitService.getAllChanges(this.options.merge)
-
-    // Check if there are still unstaged changes
-    if (stagedDiff.stats.filesChanged < allDiff.stats.filesChanged) {
-      const shouldProceed = await this.handleUnstagedChanges(
-        stagedDiff.stats.filesChanged,
-        allDiff.stats.filesChanged
+    } catch (error) {
+      // Ignore Git errors - we don't require changes for branch names
+      LoggerService.debug(
+        'No Git repository or changes detected, proceeding with context only'
       )
-
-      if (!shouldProceed) {
-        process.exit(0)
-      }
-
-      // Refresh diff if we staged more changes
-      if (stagedDiff.stats.filesChanged !== allDiff.stats.filesChanged) {
-        stagedDiff = await GitService.getStagedChanges(this.options.merge)
-      }
     }
 
-    AppLogService.debugGitDiff(stagedDiff)
-    AppLogService.gitStats(stagedDiff)
+    LoggerService.info('\n🌿 Generating branch name...')
+    const branchName = await this.openai.generateBranchName(context, diff)
 
-    AppLogService.generatingCommitMessage()
+    console.log('\n🎯 Generated branch name:')
+    console.log(chalk.green(branchName))
 
-    const message = await this.openai.generateCommitMessage(
-      stagedDiff,
-      userMessage,
-      isMerge
+    // Handle user actions for the branch name
+    const action = await uiService.promptForBranchAction()
+    const { result, newContext } = await uiService.handleBranchAction(
+      action,
+      branchName
     )
 
+    if (result === 'restart') {
+      // Regenerate with new context
+      return this.generateBranchName(newContext)
+    } else if (result === 'exit') {
+      process.exit(0)
+    }
+
+    return branchName
+  }
+
+  /**
+   * Generates a commit message for the current changes.
+   *
+   * @returns The generated commit message
+   */
+  public async generateCommitMessage(): Promise<CommitMessage> {
+    // Check for changes
+    const { stagedCount, totalCount } = await GitService.getChangeCount()
+    if (totalCount === 0) {
+      throw new Error('No changes detected')
+    }
+
+    // Handle unstaged changes
+    if (stagedCount < totalCount) {
+      const shouldProceed = await this.handleUnstagedChanges(
+        stagedCount,
+        totalCount
+      )
+      if (!shouldProceed) {
+        throw new Error('Operation cancelled')
+      }
+    }
+
+    // Get the staged changes
+    const diff = await GitService.getStagedChanges(this.options.merge)
+    AppLogService.gitStats(diff)
+
+    // Get user context if enabled
+    const context = await this.promptForContext()
+
+    // Generate the commit message
+    AppLogService.generatingCommitMessage()
+    const message = await this.openai.generateCommitMessage(diff, context)
     AppLogService.commitMessageGenerated(message)
 
     return message
   }
 
   /**
-   * Prompts the user for action and handles their choice.
-   * If skip flag is set, automatically accepts and commits.
+   * Prompts the user for action on the generated commit message.
    *
-   * @param message - The commit message to work with.
+   * @param message - The generated commit message
    * @param currentContext - The current user context if any
-   * @returns The result of the action ('exit', 'restart', or void).
+   * @returns The result of the action ('exit', 'restart', or void)
    */
   public async promptForAction(
     message: CommitMessage,
     currentContext?: string
   ): Promise<'exit' | 'restart' | void> {
-    const { default: inquirer } = await import('inquirer')
-    const { action } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: 'What would you like to do?',
-        choices: [
-          { name: 'Accept and commit', value: 'accept' },
-          { name: 'Edit message', value: 'edit' },
-          { name: 'Regenerate message', value: 'regenerate' },
-          { name: 'View full diff', value: 'diff' },
-          { name: 'Cancel', value: 'cancel' },
-        ],
-      },
-    ])
-
     const { result, newContext } = await uiService.handleAction(
-      action,
+      await uiService.promptForAction(),
       message,
       currentContext
     )
 
     if (result === 'restart') {
       // Generate a new message with potentially updated context
-      const newMessage = await this.generateCommitMessage(newContext)
+      const newMessage = await this.generateCommitMessage()
       return this.promptForAction(newMessage, newContext)
     }
 

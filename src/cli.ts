@@ -13,13 +13,19 @@ const main = async (): Promise<void> => {
     const { config, options } = await programService.initialize()
     const workflow = createWorkflow(config, options)
 
-    const message = await workflow.generateCommitMessage()
-    const result = await workflow.promptForAction(message)
+    if (options.branch) {
+      // Generate branch name
+      await workflow.generateBranchName()
+    } else {
+      // Generate commit message
+      const message = await workflow.generateCommitMessage()
+      const result = await workflow.promptForAction(message)
 
-    if (result === 'restart') {
-      await main() // Restart the flow
-    } else if (result === 'exit') {
-      process.exit(0)
+      if (result === 'restart') {
+        await main() // Restart the flow
+      } else if (result === 'exit') {
+        process.exit(0)
+      }
     }
   } catch (error) {
     LoggerService.error(error instanceof Error ? error.message : String(error))
