@@ -421,31 +421,41 @@ export class OpenAIService {
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content: `You are an expert at creating meaningful and well-structured git branch names.
-Your task is to analyze the user's intent and create a branch name that best represents the work to be done.
+        content: `You are an expert at creating concise and meaningful git branch names.
+Your task is to analyze the user's intent and create a short, focused branch name that captures the core purpose.
 
-Follow these branch naming rules and guidelines:
+Follow these strict branch naming rules:
 - Use kebab-case (lowercase with hyphens)
-- Start with an appropriate type prefix:
-  * feature/ - for new features or significant enhancements
-  * fix/ - for bug fixes
-  * refactor/ - for code restructuring without behavior changes
-  * chore/ - for maintenance tasks, dependency updates, etc.
-  * style/ - for purely cosmetic changes
-  * docs/ - for documentation changes
-- Keep it concise but descriptive (max 60 characters)
-- Focus on the core purpose, not implementation details
-- Use clear, meaningful terms that other developers will understand
-- Avoid repeating information that's already in the prefix
+- Start with the most appropriate type prefix:
+  * fix/ - for bug fixes and error corrections
+  * feat/ - for new features and enhancements
+  * refactor/ - for code restructuring
+  * chore/ - for maintenance and tooling
+  * style/ - for pure styling changes
+  * docs/ - for documentation only
+- Keep it VERY concise (max 40 characters including prefix)
+- Focus on the core problem or feature
+- Remove unnecessary context words (e.g. 'frontend', 'backend', 'server', 'client')
+- Use clear, meaningful terms
 - No special characters except hyphens and forward slashes
 
-IMPORTANT: Respond ONLY with the branch name, nothing else. No explanation, no quotes, just the branch name.
+IMPORTANT: 
+1. Respond ONLY with the branch name, nothing else
+2. Keep names SHORT - if you can say it in fewer words, do it
+3. Remove any implementation details or technical context
+4. Focus on WHAT is being done, not WHERE or HOW
 
-DO NOT simply rephrase the user's input. Instead, analyze their intent and create a branch name that:
-1. Uses the most appropriate type prefix based on the nature of the work
-2. Captures the essential purpose in a clear, professional way
-3. Is easy for other developers to understand
-4. Follows standard Git branch naming conventions`,
+Examples of good branch names:
+✓ fix/lead-mapping-sensitivity
+✓ feat/user-auth
+✓ refactor/api-endpoints
+✓ chore/eslint-rules
+
+Examples of bad branch names:
+✗ fix/frontend-lead-enrichment-mapping-sensitivity (too long)
+✗ feat/add-new-user-authentication-system (too verbose)
+✗ fix/backend-api-endpoint-error-handling (includes unnecessary context)
+✗ chore/update-frontend-eslint-config (includes unnecessary location)`,
       },
       {
         role: 'user',
@@ -457,7 +467,7 @@ DO NOT simply rephrase the user's input. Instead, analyze their intent and creat
       const completion = await this.client.chat.completions.create({
         model: this.config.model,
         messages,
-        temperature: this.config.temperature,
+        temperature: 0.3, // Lower temperature for more focused names
         max_tokens: 60,
         top_p: this.config.topP,
         frequency_penalty: this.config.frequencyPenalty,
@@ -481,7 +491,7 @@ DO NOT simply rephrase the user's input. Instead, analyze their intent and creat
 
       // Ensure it starts with a valid prefix if it doesn't already
       const validPrefixes = [
-        'feature/',
+        'feat/',
         'fix/',
         'refactor/',
         'chore/',
@@ -491,6 +501,23 @@ DO NOT simply rephrase the user's input. Instead, analyze their intent and creat
       if (!validPrefixes.some((prefix) => branchName.startsWith(prefix))) {
         // Default to chore/ if no valid prefix is present
         return 'chore/' + branchName
+      }
+
+      // Enforce maximum length by truncating if necessary
+      const maxLength = 40
+      if (branchName.length > maxLength) {
+        const prefix = branchName.split('/')[0] + '/'
+        const name = branchName.slice(prefix.length)
+        const truncatedName = name.split('-').reduce((acc, part) => {
+          if (
+            (acc + (acc ? '-' : '') + part).length <=
+            maxLength - prefix.length
+          ) {
+            return acc + (acc ? '-' : '') + part
+          }
+          return acc
+        }, '')
+        return prefix + truncatedName
       }
 
       return branchName
