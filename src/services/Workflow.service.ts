@@ -63,6 +63,45 @@ class WorkflowService {
   }
 
   /**
+   * Generates a commit message for the current changes.
+   *
+   * @returns The generated commit message
+   */
+  public async generateCommitMessage(): Promise<CommitMessage> {
+    // First check if there are any changes at all (staged or unstaged)
+    const { stagedCount, totalCount } = await GitService.getChangeCount()
+
+    if (totalCount === 0) {
+      throw new Error('No changes detected')
+    }
+
+    // Handle staging before proceeding
+    if (stagedCount < totalCount) {
+      const shouldProceed = await this.handleUnstagedChanges(
+        stagedCount,
+        totalCount
+      )
+      if (!shouldProceed) {
+        throw new Error('Operation cancelled')
+      }
+    }
+
+    // Get the staged changes after staging is handled
+    const diff = await GitService.getStagedChanges(this.options.merge)
+    AppLogService.gitStats(diff)
+
+    // Get user context if enabled
+    const context = await this.promptForContext()
+
+    // Generate the commit message
+    AppLogService.generatingCommitMessage()
+    const message = await this.openai.generateCommitMessage(diff, context)
+    AppLogService.commitMessageGenerated(message)
+
+    return message
+  }
+
+  /**
    * Prompts the user about staging changes.
    *
    * @returns True if we should proceed (either changes were staged or user wants to continue anyway).
@@ -73,10 +112,16 @@ class WorkflowService {
   ): Promise<boolean> {
     // If auto-staging is enabled (default), stage all changes automatically
     if (!this.options.noAutoStage) {
-      await GitService.stageChanges(true)
-      return true
+      try {
+        await GitService.stageChanges(true)
+        return true
+      } catch (error) {
+        // If staging fails, show the error but don't throw
+        LoggerService.error('Failed to auto-stage changes: ' + error)
+      }
     }
 
+    // If we get here, either auto-staging is disabled or it failed
     LoggerService.warn('⚠️  Some changes are not staged for commit')
     LoggerService.info('   Staged: ' + chalk.green(`${stagedCount} files`))
     LoggerService.info('   Total:  ' + chalk.yellow(`${totalCount} files`))
@@ -163,44 +208,6 @@ class WorkflowService {
     }
 
     return branchName
-  }
-
-  /**
-   * Generates a commit message for the current changes.
-   *
-   * @returns The generated commit message
-   */
-  public async generateCommitMessage(): Promise<CommitMessage> {
-    // Check for changes
-    const { stagedCount, totalCount } = await GitService.getChangeCount()
-    if (totalCount === 0) {
-      throw new Error('No changes detected')
-    }
-
-    // Handle unstaged changes
-    if (stagedCount < totalCount) {
-      const shouldProceed = await this.handleUnstagedChanges(
-        stagedCount,
-        totalCount
-      )
-      if (!shouldProceed) {
-        throw new Error('Operation cancelled')
-      }
-    }
-
-    // Get the staged changes
-    const diff = await GitService.getStagedChanges(this.options.merge)
-    AppLogService.gitStats(diff)
-
-    // Get user context if enabled
-    const context = await this.promptForContext()
-
-    // Generate the commit message
-    AppLogService.generatingCommitMessage()
-    const message = await this.openai.generateCommitMessage(diff, context)
-    AppLogService.commitMessageGenerated(message)
-
-    return message
   }
 
   /**

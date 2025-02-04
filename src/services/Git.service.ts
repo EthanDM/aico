@@ -225,37 +225,46 @@ class GitService {
    * If skip is true, automatically stages all changes without prompting.
    */
   public async stageChanges(skip: boolean = false): Promise<void> {
-    const hasChanges =
-      (await this.git.status()).modified.length > 0 ||
-      (await this.git.status()).not_added.length > 0
+    try {
+      const status = await this.git.status()
+      const hasChanges =
+        status.modified.length > 0 ||
+        status.not_added.length > 0 ||
+        status.created.length > 0
 
-    if (!hasChanges) {
-      throw new Error('No changes to commit')
-    }
+      if (!hasChanges) {
+        throw new Error('No changes to commit')
+      }
 
-    if (skip) {
-      // Stage all changes automatically
-      await this.git.add('.')
-      LoggerService.info('✨ Automatically staged all changes')
-      return
-    }
+      if (skip) {
+        // Stage all changes automatically, including untracked files
+        await this.git.add(['.'])
+        LoggerService.info('✨ Automatically staged all changes')
+        return
+      }
 
-    // Show interactive staging prompt
-    const { default: inquirer } = await import('inquirer')
-    const { shouldStage } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'shouldStage',
-        message: 'Would you like to stage all changes?',
-        default: true,
-      },
-    ])
+      // Show interactive staging prompt
+      const { default: inquirer } = await import('inquirer')
+      const { shouldStage } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'shouldStage',
+          message: 'Would you like to stage all changes?',
+          default: true,
+        },
+      ])
 
-    if (shouldStage) {
-      await this.git.add('.')
-      LoggerService.info('✨ Staged all changes')
-    } else {
-      throw new Error('Operation cancelled: No changes staged')
+      if (shouldStage) {
+        await this.git.add(['.'])
+        LoggerService.info('✨ Staged all changes')
+      } else {
+        throw new Error('Operation cancelled: No changes staged')
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Failed to stage changes')
     }
   }
 
