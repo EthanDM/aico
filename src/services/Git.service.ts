@@ -110,8 +110,16 @@ class GitService {
     const status = await this.git.status()
     return {
       isClean: status.isClean(),
-      staged: status.staged,
-      modified: status.modified,
+      staged: [
+        ...status.staged,
+        ...status.created,
+        ...status.deleted.filter((file) => status.staged.includes(file)),
+      ],
+      modified: [
+        ...status.modified,
+        ...status.not_added,
+        ...status.deleted.filter((file) => !status.staged.includes(file)),
+      ],
     }
   }
 
@@ -230,15 +238,20 @@ class GitService {
       const hasChanges =
         status.modified.length > 0 ||
         status.not_added.length > 0 ||
-        status.created.length > 0
+        status.created.length > 0 ||
+        status.deleted.length > 0
 
       if (!hasChanges) {
         throw new Error('No changes to commit')
       }
 
       if (skip) {
-        // Stage all changes automatically, including untracked files
+        // Stage all changes automatically, including untracked files and deletions
         await this.git.add(['.'])
+        // Explicitly stage deletions
+        if (status.deleted.length > 0) {
+          await this.git.raw(['add', '-u'])
+        }
         LoggerService.info('✨ Automatically staged all changes')
         return
       }
@@ -256,6 +269,10 @@ class GitService {
 
       if (shouldStage) {
         await this.git.add(['.'])
+        // Explicitly stage deletions
+        if (status.deleted.length > 0) {
+          await this.git.raw(['add', '-u'])
+        }
         LoggerService.info('✨ Staged all changes')
       } else {
         throw new Error('Operation cancelled: No changes staged')
