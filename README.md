@@ -2,6 +2,8 @@
 
 An AI-powered git commit message generator that creates conventional commit messages using OpenAI.
 
+chmod +x dist/cli.js && npm link
+
 ## Features
 
 - 🤖 Generates semantic commit messages using AI
