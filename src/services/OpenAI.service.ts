@@ -258,7 +258,16 @@ export class OpenAIService {
    * @returns The commit message.
    */
   private parseCommitMessage(content: string): CommitMessage {
-    const lines = content.trim().split('\n')
+    // First, strip any backticks, markdown, or other formatting
+    const cleanContent = content
+      .replace(/`/g, '') // Remove backticks
+      .replace(/\*\*/g, '') // Remove bold markdown
+      .replace(/\*/g, '') // Remove italic markdown
+      .replace(/^#+\s*/gm, '') // Remove heading markers
+      .replace(/^\s*[-*]\s*/gm, '- ') // Normalize list markers to '-'
+      .trim()
+
+    const lines = cleanContent.split('\n')
     const title = lines[0].trim()
 
     // Find the body (everything after the title and first empty line)
