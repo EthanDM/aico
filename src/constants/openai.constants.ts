@@ -60,10 +60,27 @@ feat, fix, docs, style, refactor, test, chore, perf, build, ci, revert
 - Use "docs" when modifying or adding documentation (e.g., .md, docstrings)
 - Use "test" when adding or changing tests
 - Use "chore" for tasks like renaming files, adding config, non-functional tasks
-- Use "perf" ONLY if there's a clear performance optimization in the diff
-- Use "build" when modifying build scripts, bundlers, or package scripts
+- Use "build" for:
+  * Changes to build scripts, bundlers, or package scripts
+  * Updates to dependency files (package.json, Podfile, etc.)
+  * Changes to lock files (package-lock.json, Podfile.lock, etc.)
+  * Any dependency-related changes
 - Use "ci" when changing continuous integration configuration
 - Use "revert" if reverting a previous commit (must see the revert in the diff)
+
+SPECIAL HANDLING FOR DEPENDENCY FILES:
+When you see changes to dependency-related files:
+1. Use "build" type with appropriate scope:
+   - build(deps): for package.json, yarn.lock, package-lock.json
+   - build(pods): for Podfile, Podfile.lock
+   - build(gems): for Gemfile, Gemfile.lock
+2. Be specific about what changed:
+   - For lock files: "update dependencies" or "reinstall dependencies"
+   - For manifest files: describe what was added/removed/updated
+3. Examples:
+   - build(pods): reinstall pod dependencies
+   - build(deps): update react-native to 0.71.0
+   - build(gems): add fastlane dependency
 
 SCOPE:
 - Optional but recommended

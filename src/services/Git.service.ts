@@ -135,10 +135,10 @@ export interface GitStatus {
       if (status.staged.length === 0) {
         return ''
       }
-      // Use --cached to show staged changes
-      return this.git.raw(['diff', '--cached'])
+      // Use --cached to show staged changes and include binary files
+      return this.git.raw(['diff', '--cached', '--full-index'])
     }
-    return this.git.diff(['--staged'])
+    return this.git.diff(['--staged', '--full-index'])
   }
 
   /**
@@ -148,11 +148,11 @@ export interface GitStatus {
    */
   public async getAllDiff(): Promise<string> {
     if (!(await this.hasCommits())) {
-      // For new repositories, compare against the empty tree object
+      // For new repositories, compare against the empty tree object and include binary files
       const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904' // git hash-object -t tree /dev/null
-      return this.git.raw(['diff', emptyTree])
+      return this.git.raw(['diff', '--full-index', emptyTree])
     }
-    return this.git.diff()
+    return this.git.diff(['--full-index'])
   }
 
   /**

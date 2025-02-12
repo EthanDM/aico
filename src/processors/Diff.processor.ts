@@ -27,13 +27,43 @@ class DiffProcessor {
     const fileRegex = /^diff --git a\/(.*) b\/(.*)/gm
     let match
 
+    // Special file types that should be highlighted
+    const dependencyFiles = [
+      'Podfile',
+      'Podfile.lock',
+      'package.json',
+      'package-lock.json',
+      'yarn.lock',
+      'pnpm-lock.yaml',
+      'Gemfile',
+      'Gemfile.lock'
+    ]
+
+    // Debug logging for raw diff
+    console.log('Raw diff:', diff)
+
     while ((match = fileRegex.exec(diff)) !== null) {
       const filePath = match[1]
+      console.log('Found file in diff:', filePath)
+      
       if (!this.isNoisyFile(filePath)) {
-        operations.push(`M ${filePath}`)
+        // Check if it's a special dependency file
+        const fileName = filePath.split('/').pop() || ''
+        console.log('Checking file:', fileName)
+        
+        if (dependencyFiles.includes(fileName)) {
+          operations.push(`M ${filePath} (dependency file)`)
+          console.log('Added dependency file:', filePath)
+        } else {
+          operations.push(`M ${filePath}`)
+          console.log('Added regular file:', filePath)
+        }
+      } else {
+        console.log('Skipped noisy file:', filePath)
       }
     }
 
+    console.log('Final operations:', operations)
     return operations
   }
 
@@ -44,13 +74,27 @@ class DiffProcessor {
    * @returns The filtered diff string
    */
   private filterNoisyFiles(rawDiff: string): string {
+    // Debug logging
+    console.log('Filtering diff, original length:', rawDiff.length)
+    
     const diffSections = rawDiff.split(/(?=diff --git )/g)
-    return diffSections
+    const filtered = diffSections
       .filter((section) => {
         const match = section.match(/^diff --git a\/(.*) b\//)
-        return match ? !this.isNoisyFile(match[1]) : true
+        if (match) {
+          console.log('Checking section for file:', match[1])
+          const isNoisy = this.isNoisyFile(match[1])
+          if (isNoisy) {
+            console.log('Filtered out noisy file:', match[1])
+          }
+          return !isNoisy
+        }
+        return true
       })
       .join('')
+
+    console.log('Filtered diff length:', filtered.length)
+    return filtered
   }
 
   /**
@@ -131,55 +175,58 @@ class DiffProcessor {
    */
   public processDiff(diff: string, isMerge: boolean = false): ProcessedDiff {
     const CHARACTER_LIMIT = 20000
-    const filteredRawDiff = new DiffProcessor().filterNoisyFiles(diff)
-    const fileOperations = new DiffProcessor().extractFileOperations(diff)
-    const functionChanges = new DiffProcessor().extractFunctionChanges(
-      filteredRawDiff
-    )
-    const dependencyChanges = new DiffProcessor().extractDependencyChanges(
-      filteredRawDiff
-    )
+    
+    // Store the raw diff before any filtering
+    const rawDiff = diff
 
-    // Extract additions and deletions from filtered diff
-    const additions: string[] = []
-    const deletions: string[] = []
-    filteredRawDiff.split('\n').forEach((line) => {
-      if (line.startsWith('+') && !line.startsWith('+++')) additions.push(line)
-      if (line.startsWith('-') && !line.startsWith('---')) deletions.push(line)
-    })
+    // Extract file operations before filtering
+    const fileOperations = this.extractFileOperations(diff)
+    
+    // Filter out noisy files for the summary
+    const filteredRawDiff = this.filterNoisyFiles(diff)
+    
+    const functionChanges = this.extractFunctionChanges(filteredRawDiff)
+    const dependencyChanges = this.extractDependencyChanges(filteredRawDiff)
 
-    const details: GitDiff = {
-      fileOperations,
-      functionChanges,
-      dependencyChanges,
-      additions,
-      deletions,
-      rawDiff: diff,
-      filteredRawDiff: filteredRawDiff,
-    }
+    // Count additions and deletions
+    const additionLines = (rawDiff.match(/^\+(?![\+\-\s])/gm) || []).length
+    const deletionLines = (rawDiff.match(/^\-(?![\+\-\s])/gm) || []).length
+    const filesChanged = (rawDiff.match(/^diff --git/gm) || []).length
 
-    // Use filtered raw diff if under limit, otherwise use summary
-    const shouldSummarize = filteredRawDiff.length > CHARACTER_LIMIT
-    const summary = shouldSummarize
-      ? new DiffProcessor().summarizeDiff(details)
+    // Check if we need to summarize
+    const wasSummarized = filteredRawDiff.length > CHARACTER_LIMIT
+    const summary = wasSummarized
+      ? this.summarizeDiff({
+          fileOperations,
+          functionChanges,
+          dependencyChanges,
+          additions: [],
+          deletions: [],
+          rawDiff,
+          filteredRawDiff
+        })
       : filteredRawDiff
-
-    // Calculate stats
-    const stats = {
-      originalLength: diff.length,
-      filteredLength: filteredRawDiff.length,
-      processedLength: summary.length,
-      filesChanged: fileOperations.length,
-      additions: additions.length,
-      deletions: deletions.length,
-      wasSummarized: shouldSummarize,
-    }
 
     return {
       summary,
-      details,
-      stats,
-      isMerge,
+      details: {
+        fileOperations,
+        functionChanges,
+        dependencyChanges,
+        additions: [],
+        deletions: [],
+        rawDiff,
+        filteredRawDiff
+      },
+      stats: {
+        originalLength: rawDiff.length,
+        processedLength: summary.length,
+        filesChanged,
+        additions: additionLines,
+        deletions: deletionLines,
+        wasSummarized
+      },
+      isMerge
     }
   }
 }

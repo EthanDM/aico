@@ -155,6 +155,19 @@ export class OpenAIService {
    * @returns True if the file appears to be binary/media
    */
   private isBinaryOrMediaFile(filename: string): boolean {
+    // Always allow these files even if they match binary extensions
+    const alwaysAllowedFiles = [
+      'Podfile.lock',
+      'package-lock.json',
+      'yarn.lock',
+      'pnpm-lock.yaml',
+      'Gemfile.lock'
+    ]
+
+    if (alwaysAllowedFiles.some(file => filename.endsWith(file))) {
+      return false
+    }
+
     const binaryExtensions = [
       // Video
       'mp4',
@@ -272,6 +285,25 @@ export class OpenAIService {
     const branchName = await GitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
 
+    // Add file changes summary first
+    parts.push('\n=== CHANGED FILES ===')
+    const fileOperations = diff.details.fileOperations
+    if (fileOperations.length > 0) {
+      parts.push('Modified files:')
+      fileOperations.forEach(op => parts.push(`- ${op}`))
+    }
+
+    // Add dependency changes if any
+    const dependencyChanges = diff.details.dependencyChanges
+    if (dependencyChanges.length > 0) {
+      parts.push('\nDependency changes:')
+      dependencyChanges.forEach(dep => parts.push(`- ${dep}`))
+    }
+
+    // Add stats
+    parts.push(`\nStats: ${diff.stats.additions} additions, ${diff.stats.deletions} deletions`)
+    parts.push('=== END CHANGED FILES ===\n')
+
     // Process diff to remove binary content
     const processedDiff = this.processDiffContent(diff)
 
@@ -333,15 +365,9 @@ export class OpenAIService {
       })
     }
 
-    // Add diff information with clear priority
-    parts.push('\nCurrent changes (use these to support the user context):')
-    if (processedDiff.stats.wasSummarized) {
-      parts.push(processedDiff.summary)
-      parts.push(`\nFiles changed: ${processedDiff.stats.filesChanged}`)
-      parts.push(`Additions: ${processedDiff.stats.additions}`)
-      parts.push(`Deletions: ${processedDiff.stats.deletions}`)
-    } else {
-      parts.push('\nRaw diff:')
+    // Add diff content last and only if not too large
+    if (!processedDiff.stats.wasSummarized && processedDiff.summary.length < 1000) {
+      parts.push('\nDetailed changes (if needed for context):')
       parts.push(processedDiff.summary)
     }
 
@@ -462,8 +488,19 @@ export class OpenAIService {
 
     const prompt = await this.buildPrompt(diff, userMessage)
 
-    // Log model info
-    LoggerService.debug(`\n🤖 Model: ${this.config.model}`)
+    // Log model info and full request details in debug mode
+    LoggerService.debug('\n🤖 OpenAI Request Details:')
+    LoggerService.debug(`Model: ${this.config.model}`)
+    LoggerService.debug(`Configuration: ${JSON.stringify({
+      maxTokens: this.config.maxTokens,
+      temperature: this.config.temperature,
+      topP: this.config.topP,
+      frequencyPenalty: this.config.frequencyPenalty,
+      presencePenalty: this.config.presencePenalty,
+    }, null, 2)}`)
+    
+    LoggerService.debug('\n📝 Complete Prompt:')
+    LoggerService.debug(prompt)
 
     const messages: ChatCompletionMessageParam[] = [
       {
@@ -480,13 +517,8 @@ export class OpenAIService {
       },
     ]
 
-    LoggerService.debug('\n🔍 Building OpenAI Request:')
-    LoggerService.debug(`Model: ${this.config.model}`)
-    LoggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
-    LoggerService.debug(`Temperature: ${this.config.temperature}`)
-    LoggerService.debug('Messages:')
-    LoggerService.debug(`system: ${messages[0].content}`)
-    LoggerService.debug('user: <diff content omitted>')
+    LoggerService.debug('\n💬 Complete Messages Array:')
+    LoggerService.debug(JSON.stringify(messages, null, 2))
 
     LoggerService.debug('\n📤 Sending request to OpenAI...')
 
@@ -502,7 +534,7 @@ export class OpenAIService {
 
     LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
 
-    LoggerService.debug('\n📥 Received response from OpenAI:')
+    LoggerService.debug('\n📥 Complete OpenAI Response:')
     LoggerService.debug(JSON.stringify(response, null, 2))
 
     const content = response.choices[0]?.message?.content
