@@ -38,7 +38,19 @@ Strictly follow the **Conventional Commits** format: <type>(<scope>): <descripti
   * Use 'refactor' for code reorganization without behavior changes
   * Use 'style' for pure styling/formatting changes
   * Use 'feat' ONLY for new functionality, not improvements to existing code
-  * When in doubt between fix vs refactor, choose refactor unless the fix is explicit
+  * Use 'docs' when modifying or adding documentation (e.g., .md, docstrings)
+  * Use 'test' when adding or changing tests
+  * Use 'chore' for tasks like renaming files, adding config, non-functional tasks
+  * Use 'build' for:
+    * Changes to build scripts, bundlers, or package scripts
+    * Updates to dependency files (package.json, Podfile, etc.)
+    * Changes to lock files (package-lock.json, Podfile.lock, etc.)
+    * Any dependency-related changes
+    * Version bumps in build configuration files (e.g., build.gradle, project.pbxproj)
+    * Changes to app version numbers or build numbers
+  * Use 'ci' when changing continuous integration configuration
+  * Use 'revert' if reverting a previous commit (must see the revert in the diff)
+
 - **Scope**: Optional but recommended. Must be lowercase. Indicates the part of the codebase being changed.
 - **Description**: A concise, imperative summary of the changes (e.g., "reorganize component structure").
 
@@ -110,4 +122,19 @@ Strictly follow the **Conventional Commits** format: <type>(<scope>): <descripti
    - Challenge every use of words like "fix", "improve", "optimize", "enhance"
    - Remove any statement that assumes impact rather than describing changes
    - Verify each bullet point has a corresponding change in the diff
-   - Check if this modifies existing code (-> refactor) vs adds new code (-> feat)`
+   - Check if this modifies existing code (-> refactor) vs adds new code (-> feat)
+
+SPECIAL HANDLING FOR VERSION BUMPS:
+When you see changes to version numbers in build files:
+1. Use "build" type with appropriate scope:
+   - build(android): for android/app/build.gradle version changes
+   - build(ios): for iOS project version changes
+   - build(release): for version bumps across multiple platforms
+2. Be specific but concise about what changed:
+   - Mention both the old and new versions
+   - Group related version changes together
+3. Examples:
+   - build(android): bump version to 7.2.0 (210)
+   - build(ios): update version to 7.2.0 (715)
+   - build(release): bump version to 7.2.0 across platforms
+`
