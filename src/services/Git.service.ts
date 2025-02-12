@@ -323,6 +323,39 @@ export interface GitStatus {
   }
 
   /**
+   * Resolves a git reference (like HEAD) to its actual branch name.
+   *
+   * @param ref - The reference to resolve
+   * @returns The resolved branch name
+   */
+  public async resolveBranchName(ref: string): Promise<string> {
+    try {
+      if (ref === 'HEAD') {
+        // Try to get the symbolic ref first (for current branch)
+        try {
+          const symbolicRef = await this.git.raw(['symbolic-ref', '--short', 'HEAD'])
+          return symbolicRef.trim()
+        } catch {
+          // If symbolic ref fails, try rev-parse to get the commit hash
+          const hash = await this.git.raw(['rev-parse', 'HEAD'])
+          // Then try to get the branch name that contains this commit
+          const branchName = await this.git.raw([
+            'name-rev',
+            '--name-only',
+            '--exclude=tags/*',
+            hash.trim(),
+          ])
+          return branchName.trim().replace('remotes/origin/', '')
+        }
+      }
+      return ref
+    } catch (error) {
+      LoggerService.debug(`Could not resolve branch name for ${ref}: ${error}`)
+      return ref
+    }
+  }
+
+  /**
    * Gets the source and target branches of a merge operation.
    *
    * @returns Object containing source and target branch names, if available.
@@ -346,11 +379,16 @@ export interface GitStatus {
         source.trim(),
       ])
 
+      // Resolve both branches to their actual names
+      const resolvedSource = await this.resolveBranchName(sourceBranch.trim())
+      const resolvedTarget = await this.resolveBranchName(target.trim())
+
       return {
-        source: sourceBranch.trim().replace('remotes/origin/', ''),
-        target: target.trim(),
+        source: resolvedSource.replace('remotes/origin/', ''),
+        target: resolvedTarget,
       }
     } catch (error) {
+      LoggerService.debug(`Could not determine merge heads: ${error}`)
       return {}
     }
   }

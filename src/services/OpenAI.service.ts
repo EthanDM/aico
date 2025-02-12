@@ -50,13 +50,13 @@ export class OpenAIService {
   }> {
     // First check if it's explicitly marked as a merge
     if (isMerge) {
-      LoggerService.debug('Merge explicitly specified')
+      LoggerService.debug('Merge explicitly specified via --merge flag')
     } else {
-      // If not explicitly marked, try to detect if we're in a merge state
+      // If not explicitly marked, only check for active merge state (MERGE_HEAD)
       try {
-        isMerge = await GitService.isMergingBranch() || await GitService.hasMultipleParents()
+        isMerge = await GitService.isMergingBranch()
         if (isMerge) {
-          LoggerService.debug('Merge detected through git state')
+          LoggerService.debug('Active merge detected (MERGE_HEAD exists)')
         }
       } catch (error) {
         LoggerService.debug(`Error detecting merge state: ${error}`)
@@ -79,10 +79,19 @@ export class OpenAIService {
       if (mergeHeads.source && mergeHeads.target) {
         sourceBranch = mergeHeads.source
         targetBranch = mergeHeads.target
-        mergeInfo.push(`Merging from ${sourceBranch} into ${targetBranch}`)
+        // Use more descriptive format for merge message
+        if (sourceBranch === 'main' || sourceBranch === 'master') {
+          mergeInfo.push(`Merging latest changes from ${sourceBranch} into ${targetBranch}`)
+        } else {
+          mergeInfo.push(`Merging ${sourceBranch} branch into ${targetBranch}`)
+        }
+      } else {
+        LoggerService.debug('Could not determine merge branches, using generic message')
+        mergeInfo.push('Merging branch changes')
       }
     } catch (error) {
       LoggerService.debug(`Could not determine merge branches: ${error}`)
+      mergeInfo.push('Merging branch changes')
     }
 
     // Detect conflicts by looking for conflict markers in the diff
@@ -250,6 +259,15 @@ export class OpenAIService {
   ): Promise<string> {
     const parts = ['Generate a commit message for the following changes:']
 
+    // If user provided context, add it first with strong emphasis
+    if (userMessage) {
+      parts.push('\n=== USER CONTEXT - PLEASE PRIORITIZE THIS GUIDANCE ===')
+      parts.push('The user has provided specific guidance for this commit message:')
+      parts.push(userMessage)
+      parts.push('Please ensure the commit message primarily reflects this guidance while accurately describing the changes.')
+      parts.push('=== END USER CONTEXT ===\n')
+    }
+
     // Add branch context
     const branchName = await GitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
@@ -277,7 +295,12 @@ export class OpenAIService {
       parts.push('Type: chore')
       parts.push('Scope: merge')
       if (sourceBranch && targetBranch) {
-        parts.push(`\nMerging from ${sourceBranch} into ${targetBranch}`)
+        // Use more descriptive format for merge message
+        if (sourceBranch === 'main' || sourceBranch === 'master') {
+          parts.push(`\nMerging latest changes from ${sourceBranch} into ${targetBranch}`)
+        } else {
+          parts.push(`\nMerging ${sourceBranch} branch into ${targetBranch}`)
+        }
       }
       if (mergeInfo) {
         parts.push('\nMerge details:')
@@ -285,23 +308,18 @@ export class OpenAIService {
       }
       if (hadConflicts) {
         parts.push('\nConflict Resolution:')
-        parts.push(`${conflictFiles?.length} files had conflicts that were resolved:`)
-          conflictFiles?.forEach(file => parts.push(`- ${file}`))
+        if (conflictFiles?.length) {
+          parts.push(`${conflictFiles.length} files had conflicts that were resolved:`)
+          conflictFiles.forEach(file => parts.push(`- ${file}`))
+        } else {
+          parts.push('Merge had conflicts that were resolved (specific files could not be determined)')
+        }
       }
       parts.push('=== END MERGE INFORMATION ===\n')
     }
 
-    // Add user guidance if provided
-    if (userMessage) {
-      parts.push('\nUser suggested message:')
-      parts.push(userMessage)
-      parts.push(
-        '\nConsider the above message as guidance, but ensure the commit message accurately reflects the actual changes.'
-      )
-    }
-
     // Add recent commits context, but with clear instruction
-      const recentCommits = await GitService.getRecentCommits(5)
+    const recentCommits = await GitService.getRecentCommits(5)
     if (recentCommits.length > 0) {
       parts.push(
         '\nRecent commits (for context only, do not reference unless directly relevant):'
@@ -316,7 +334,7 @@ export class OpenAIService {
     }
 
     // Add diff information with clear priority
-    parts.push('\nCurrent changes (primary focus for commit message):')
+    parts.push('\nCurrent changes (use these to support the user context):')
     if (processedDiff.stats.wasSummarized) {
       parts.push(processedDiff.summary)
       parts.push(`\nFiles changed: ${processedDiff.stats.filesChanged}`)
