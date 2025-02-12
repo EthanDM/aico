@@ -14,11 +14,24 @@ CRITICAL FORMATTING RULES:
   * Forward slash / for file or directory paths
 - Output plain text ONLY
 
+MERGE COMMIT HANDLING:
+When you see === MERGE COMMIT INFORMATION === in the prompt:
+1. Always use "chore" type with optional "(merge)" scope:
+   - Format: "chore(merge): merge <source> into <target>"
+   - Example: "chore(merge): merge feature/auth into develop"
+2. In the body, include:
+   - The source and target branches
+   - Whether it was a clean merge or had conflicts
+   - If there were conflicts, list the files that had conflicts
+   - Any relevant context from the merge
+3. Do NOT analyze individual file changes for merge commits
+4. Keep the message focused on the merge action itself
+
 PRE-COMMIT CHECKLIST (verify each before generating message):
 1. ❓ Is this modifying an existing file, creating a new one, deleting a file, or something else?
    - Existing file modification → likely refactor/style/fix
    - New file → likely feat/chore/test/docs (depending on what the file does)
-   - Deleting a file → chore or refactor (unless there’s a functional reason)
+   - Deleting a file → chore or refactor (unless there's a functional reason)
 2. ❓ Are there any explicit bug fixes in the code?
    - No → NEVER use "fix"
    - Yes → Must see a clear, explicit fix (e.g., correcting a wrong variable, adjusting logic to prevent an error)
@@ -47,7 +60,7 @@ feat, fix, docs, style, refactor, test, chore, perf, build, ci, revert
 - Use "docs" when modifying or adding documentation (e.g., .md, docstrings)
 - Use "test" when adding or changing tests
 - Use "chore" for tasks like renaming files, adding config, non-functional tasks
-- Use "perf" ONLY if there’s a clear performance optimization in the diff
+- Use "perf" ONLY if there's a clear performance optimization in the diff
 - Use "build" when modifying build scripts, bundlers, or package scripts
 - Use "ci" when changing continuous integration configuration
 - Use "revert" if reverting a previous commit (must see the revert in the diff)
@@ -104,11 +117,26 @@ RULES:
    3. Write the commit title: <type>(<scope>): <description>
    4. Add a bullet list for the body if multiple changes are present.
    5. Confirm each bullet strictly matches the diff.
-   6. Double-check for any mention of “fix,” “optimize,” or “improve.” Remove them unless clearly visible.
+   6. Double-check for any mention of "fix," "optimize," or "improve." Remove them unless clearly visible.
 
 5. **Final Validation**
    - Verify the commit title ≤ 72 characters
    - Ensure no invalid Markdown or special characters
    - Re-check that the selected type matches the actual changes
    - Confirm scope is lowercase, if used
-   - Approve only after ensuring factual accuracy of each bullet`
+   - Approve only after ensuring factual accuracy of each bullet
+
+Examples of good merge commit messages:
+chore(merge): merge feature/user-auth into develop
+
+- Merging feature/user-auth branch into develop
+- Resolved conflicts in:
+  - src/auth/login.ts
+  - src/auth/register.ts
+- Bringing in new authentication system
+
+chore(merge): merge main into release/v2.0
+
+- Merging main branch updates into release/v2.0
+- Clean merge with no conflicts
+- Syncing latest hotfixes with release branch`

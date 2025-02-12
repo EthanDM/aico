@@ -3,6 +3,7 @@ import { Config, ProcessedDiff, CommitMessage } from '../types'
 import LoggerService from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import GitService from './Git.service'
+import { GitCommit } from './Git.service'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 
 type OpenAIConfig = Config['openai']
@@ -44,7 +45,24 @@ export class OpenAIService {
     mergeInfo?: string[]
     sourceBranch?: string
     targetBranch?: string
+    hadConflicts?: boolean
+    conflictFiles?: string[]
   }> {
+    // First check if it's explicitly marked as a merge
+    if (isMerge) {
+      LoggerService.debug('Merge explicitly specified')
+    } else {
+      // If not explicitly marked, try to detect if we're in a merge state
+      try {
+        isMerge = await GitService.isMergingBranch() || await GitService.hasMultipleParents()
+        if (isMerge) {
+          LoggerService.debug('Merge detected through git state')
+        }
+      } catch (error) {
+        LoggerService.debug(`Error detecting merge state: ${error}`)
+      }
+    }
+
     if (!isMerge) {
       return { isMerge: false }
     }
@@ -52,6 +70,8 @@ export class OpenAIService {
     const mergeInfo: string[] = []
     let sourceBranch: string | undefined
     let targetBranch: string | undefined
+    let hadConflicts = false
+    const conflictFiles: string[] = []
 
     // Try to get source and target branches
     try {
@@ -65,10 +85,58 @@ export class OpenAIService {
       LoggerService.debug(`Could not determine merge branches: ${error}`)
     }
 
-    // For merge commits, we'll just state it's a clean merge
-    mergeInfo.push('\nClean merge with no conflicts')
+    // Detect conflicts by looking for conflict markers in the diff
+    const conflictMarkerRegex = /^[<>=]{7}/m
+    const fileHeaderRegex = /^diff --git a\/(.*) b\/(.*)/m
+    
+    let currentFile: string | null = null
+    const lines = diff.summary.split('\n')
+    
+    for (const line of lines) {
+      const fileMatch = line.match(fileHeaderRegex)
+      if (fileMatch) {
+        currentFile = fileMatch[1]
+        continue
+      }
+      
+      if (currentFile && conflictMarkerRegex.test(line)) {
+        hadConflicts = true
+        if (!conflictFiles.includes(currentFile)) {
+          conflictFiles.push(currentFile)
+        }
+      }
+    }
 
-    return { isMerge, mergeInfo, sourceBranch, targetBranch }
+    // Check for .git/MERGE_MSG which indicates there were conflicts
+    try {
+      const mergeMsgExists = await GitService.isMergingBranch()
+      if (mergeMsgExists) {
+        hadConflicts = true
+      }
+    } catch (error) {
+      LoggerService.debug('Could not check for MERGE_MSG file')
+    }
+
+    if (hadConflicts) {
+      mergeInfo.push('Merge had conflicts that were resolved in these files:')
+      const files = conflictFiles as string[] | undefined
+      if (files?.length) {
+        files.forEach(file => mergeInfo.push(`- ${file}`))
+      } else {
+        mergeInfo.push('(Specific files with conflicts could not be determined)')
+      }
+    } else {
+      mergeInfo.push('Clean merge with no conflicts')
+    }
+
+    return { 
+      isMerge, 
+      mergeInfo, 
+      sourceBranch, 
+      targetBranch,
+      hadConflicts,
+      conflictFiles 
+    }
   }
 
   /**
@@ -195,6 +263,8 @@ export class OpenAIService {
       mergeInfo,
       sourceBranch,
       targetBranch,
+      hadConflicts,
+      conflictFiles
     } = await this.detectMergeInfo(
       processedDiff,
       userMessage,
@@ -202,14 +272,23 @@ export class OpenAIService {
     )
 
     if (confirmed) {
-      parts.push('\nThis is a merge commit.')
+      parts.push('\n=== MERGE COMMIT INFORMATION ===')
+      parts.push('This is a merge commit - use conventional commits format:')
+      parts.push('Type: chore')
+      parts.push('Scope: merge')
       if (sourceBranch && targetBranch) {
-        parts.push(`Merging from ${sourceBranch} into ${targetBranch}`)
+        parts.push(`\nMerging from ${sourceBranch} into ${targetBranch}`)
       }
       if (mergeInfo) {
         parts.push('\nMerge details:')
         parts.push(...mergeInfo)
       }
+      if (hadConflicts) {
+        parts.push('\nConflict Resolution:')
+        parts.push(`${conflictFiles?.length} files had conflicts that were resolved:`)
+          conflictFiles?.forEach(file => parts.push(`- ${file}`))
+      }
+      parts.push('=== END MERGE INFORMATION ===\n')
     }
 
     // Add user guidance if provided
@@ -222,12 +301,12 @@ export class OpenAIService {
     }
 
     // Add recent commits context, but with clear instruction
-    const recentCommits = await GitService.getRecentCommits(5)
+      const recentCommits = await GitService.getRecentCommits(5)
     if (recentCommits.length > 0) {
       parts.push(
         '\nRecent commits (for context only, do not reference unless directly relevant):'
       )
-      recentCommits.forEach((commit) => {
+      recentCommits.forEach((commit: GitCommit) => {
         parts.push(
           `${commit.hash} (${commit.date}): ${commit.message}${
             commit.refs ? ` ${commit.refs}` : ''

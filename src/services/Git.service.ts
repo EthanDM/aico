@@ -3,14 +3,14 @@ import DiffProcessor from '../processors/Diff.processor'
 import { ProcessedDiff, CommitMessage } from '../types'
 import LoggerService from './Logger.service'
 
-interface GitCommit {
+export interface GitCommit {
   hash: string
   date: string
   message: string
   refs?: string
 }
 
-interface GitStatus {
+export interface GitStatus {
   isClean: boolean
   staged: string[]
   modified: string[]
@@ -19,7 +19,7 @@ interface GitStatus {
 /**
  * Service for interacting with Git repository and managing version control operations.
  */
-class GitService {
+ class GitService {
   private git: SimpleGit
 
   constructor() {
@@ -383,6 +383,21 @@ class GitService {
     } catch (error) {
       LoggerService.error(`Failed to create branch: ${error}`)
       throw error
+    }
+  }
+
+  /**
+   * Checks if a file exists in the git repository.
+   *
+   * @param path - The path to check, relative to the repository root
+   * @returns True if the file exists, false otherwise
+   */
+  public async fileExists(path: string): Promise<boolean> {
+    try {
+      await this.git.raw(['cat-file', '-e', `HEAD:${path}`])
+      return true
+    } catch (error) {
+      return false
     }
   }
 }
