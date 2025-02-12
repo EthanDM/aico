@@ -3,14 +3,14 @@ import DiffProcessor from '../processors/Diff.processor'
 import { ProcessedDiff, CommitMessage } from '../types'
 import LoggerService from './Logger.service'
 
-export interface GitCommit {
+interface GitCommit {
   hash: string
   date: string
   message: string
   refs?: string
 }
 
-export interface GitStatus {
+interface GitStatus {
   isClean: boolean
   staged: string[]
   modified: string[]
@@ -19,7 +19,7 @@ export interface GitStatus {
 /**
  * Service for interacting with Git repository and managing version control operations.
  */
- class GitService {
+class GitService {
   private git: SimpleGit
 
   constructor() {
@@ -135,10 +135,10 @@ export interface GitStatus {
       if (status.staged.length === 0) {
         return ''
       }
-      // Use --cached to show staged changes and include binary files
-      return this.git.raw(['diff', '--cached', '--full-index'])
+      // Use --cached to show staged changes
+      return this.git.raw(['diff', '--cached'])
     }
-    return this.git.diff(['--staged', '--full-index'])
+    return this.git.diff(['--staged'])
   }
 
   /**
@@ -148,11 +148,11 @@ export interface GitStatus {
    */
   public async getAllDiff(): Promise<string> {
     if (!(await this.hasCommits())) {
-      // For new repositories, compare against the empty tree object and include binary files
+      // For new repositories, compare against the empty tree object
       const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904' // git hash-object -t tree /dev/null
-      return this.git.raw(['diff', '--full-index', emptyTree])
+      return this.git.raw(['diff', emptyTree])
     }
-    return this.git.diff(['--full-index'])
+    return this.git.diff()
   }
 
   /**
@@ -323,39 +323,6 @@ export interface GitStatus {
   }
 
   /**
-   * Resolves a git reference (like HEAD) to its actual branch name.
-   *
-   * @param ref - The reference to resolve
-   * @returns The resolved branch name
-   */
-  public async resolveBranchName(ref: string): Promise<string> {
-    try {
-      if (ref === 'HEAD') {
-        // Try to get the symbolic ref first (for current branch)
-        try {
-          const symbolicRef = await this.git.raw(['symbolic-ref', '--short', 'HEAD'])
-          return symbolicRef.trim()
-        } catch {
-          // If symbolic ref fails, try rev-parse to get the commit hash
-          const hash = await this.git.raw(['rev-parse', 'HEAD'])
-          // Then try to get the branch name that contains this commit
-          const branchName = await this.git.raw([
-            'name-rev',
-            '--name-only',
-            '--exclude=tags/*',
-            hash.trim(),
-          ])
-          return branchName.trim().replace('remotes/origin/', '')
-        }
-      }
-      return ref
-    } catch (error) {
-      LoggerService.debug(`Could not resolve branch name for ${ref}: ${error}`)
-      return ref
-    }
-  }
-
-  /**
    * Gets the source and target branches of a merge operation.
    *
    * @returns Object containing source and target branch names, if available.
@@ -379,16 +346,11 @@ export interface GitStatus {
         source.trim(),
       ])
 
-      // Resolve both branches to their actual names
-      const resolvedSource = await this.resolveBranchName(sourceBranch.trim())
-      const resolvedTarget = await this.resolveBranchName(target.trim())
-
       return {
-        source: resolvedSource.replace('remotes/origin/', ''),
-        target: resolvedTarget,
+        source: sourceBranch.trim().replace('remotes/origin/', ''),
+        target: target.trim(),
       }
     } catch (error) {
-      LoggerService.debug(`Could not determine merge heads: ${error}`)
       return {}
     }
   }
@@ -421,21 +383,6 @@ export interface GitStatus {
     } catch (error) {
       LoggerService.error(`Failed to create branch: ${error}`)
       throw error
-    }
-  }
-
-  /**
-   * Checks if a file exists in the git repository.
-   *
-   * @param path - The path to check, relative to the repository root
-   * @returns True if the file exists, false otherwise
-   */
-  public async fileExists(path: string): Promise<boolean> {
-    try {
-      await this.git.raw(['cat-file', '-e', `HEAD:${path}`])
-      return true
-    } catch (error) {
-      return false
     }
   }
 }

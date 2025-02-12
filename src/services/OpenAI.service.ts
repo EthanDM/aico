@@ -3,7 +3,6 @@ import { Config, ProcessedDiff, CommitMessage } from '../types'
 import LoggerService from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import GitService from './Git.service'
-import { GitCommit } from './Git.service'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 
 type OpenAIConfig = Config['openai']
@@ -45,24 +44,7 @@ export class OpenAIService {
     mergeInfo?: string[]
     sourceBranch?: string
     targetBranch?: string
-    hadConflicts?: boolean
-    conflictFiles?: string[]
   }> {
-    // First check if it's explicitly marked as a merge
-    if (isMerge) {
-      LoggerService.debug('Merge explicitly specified via --merge flag')
-    } else {
-      // If not explicitly marked, only check for active merge state (MERGE_HEAD)
-      try {
-        isMerge = await GitService.isMergingBranch()
-        if (isMerge) {
-          LoggerService.debug('Active merge detected (MERGE_HEAD exists)')
-        }
-      } catch (error) {
-        LoggerService.debug(`Error detecting merge state: ${error}`)
-      }
-    }
-
     if (!isMerge) {
       return { isMerge: false }
     }
@@ -70,8 +52,6 @@ export class OpenAIService {
     const mergeInfo: string[] = []
     let sourceBranch: string | undefined
     let targetBranch: string | undefined
-    let hadConflicts = false
-    const conflictFiles: string[] = []
 
     // Try to get source and target branches
     try {
@@ -79,73 +59,16 @@ export class OpenAIService {
       if (mergeHeads.source && mergeHeads.target) {
         sourceBranch = mergeHeads.source
         targetBranch = mergeHeads.target
-        // Use more descriptive format for merge message
-        if (sourceBranch === 'main' || sourceBranch === 'master') {
-          mergeInfo.push(`Merging latest changes from ${sourceBranch} into ${targetBranch}`)
-        } else {
-          mergeInfo.push(`Merging ${sourceBranch} branch into ${targetBranch}`)
-        }
-      } else {
-        LoggerService.debug('Could not determine merge branches, using generic message')
-        mergeInfo.push('Merging branch changes')
+        mergeInfo.push(`Merging from ${sourceBranch} into ${targetBranch}`)
       }
     } catch (error) {
       LoggerService.debug(`Could not determine merge branches: ${error}`)
-      mergeInfo.push('Merging branch changes')
     }
 
-    // Detect conflicts by looking for conflict markers in the diff
-    const conflictMarkerRegex = /^[<>=]{7}/m
-    const fileHeaderRegex = /^diff --git a\/(.*) b\/(.*)/m
-    
-    let currentFile: string | null = null
-    const lines = diff.summary.split('\n')
-    
-    for (const line of lines) {
-      const fileMatch = line.match(fileHeaderRegex)
-      if (fileMatch) {
-        currentFile = fileMatch[1]
-        continue
-      }
-      
-      if (currentFile && conflictMarkerRegex.test(line)) {
-        hadConflicts = true
-        if (!conflictFiles.includes(currentFile)) {
-          conflictFiles.push(currentFile)
-        }
-      }
-    }
+    // For merge commits, we'll just state it's a clean merge
+    mergeInfo.push('\nClean merge with no conflicts')
 
-    // Check for .git/MERGE_MSG which indicates there were conflicts
-    try {
-      const mergeMsgExists = await GitService.isMergingBranch()
-      if (mergeMsgExists) {
-        hadConflicts = true
-      }
-    } catch (error) {
-      LoggerService.debug('Could not check for MERGE_MSG file')
-    }
-
-    if (hadConflicts) {
-      mergeInfo.push('Merge had conflicts that were resolved in these files:')
-      const files = conflictFiles as string[] | undefined
-      if (files?.length) {
-        files.forEach(file => mergeInfo.push(`- ${file}`))
-      } else {
-        mergeInfo.push('(Specific files with conflicts could not be determined)')
-      }
-    } else {
-      mergeInfo.push('Clean merge with no conflicts')
-    }
-
-    return { 
-      isMerge, 
-      mergeInfo, 
-      sourceBranch, 
-      targetBranch,
-      hadConflicts,
-      conflictFiles 
-    }
+    return { isMerge, mergeInfo, sourceBranch, targetBranch }
   }
 
   /**
@@ -155,19 +78,6 @@ export class OpenAIService {
    * @returns True if the file appears to be binary/media
    */
   private isBinaryOrMediaFile(filename: string): boolean {
-    // Always allow these files even if they match binary extensions
-    const alwaysAllowedFiles = [
-      'Podfile.lock',
-      'package-lock.json',
-      'yarn.lock',
-      'pnpm-lock.yaml',
-      'Gemfile.lock'
-    ]
-
-    if (alwaysAllowedFiles.some(file => filename.endsWith(file))) {
-      return false
-    }
-
     const binaryExtensions = [
       // Video
       'mp4',
@@ -272,37 +182,9 @@ export class OpenAIService {
   ): Promise<string> {
     const parts = ['Generate a commit message for the following changes:']
 
-    // If user provided context, add it first with strong emphasis
-    if (userMessage) {
-      parts.push('\n=== USER CONTEXT - PLEASE PRIORITIZE THIS GUIDANCE ===')
-      parts.push('The user has provided specific guidance for this commit message:')
-      parts.push(userMessage)
-      parts.push('Please ensure the commit message primarily reflects this guidance while accurately describing the changes.')
-      parts.push('=== END USER CONTEXT ===\n')
-    }
-
     // Add branch context
     const branchName = await GitService.getBranchName()
     parts.push(`\nCurrent branch: ${branchName}`)
-
-    // Add file changes summary first
-    parts.push('\n=== CHANGED FILES ===')
-    const fileOperations = diff.details.fileOperations
-    if (fileOperations.length > 0) {
-      parts.push('Modified files:')
-      fileOperations.forEach(op => parts.push(`- ${op}`))
-    }
-
-    // Add dependency changes if any
-    const dependencyChanges = diff.details.dependencyChanges
-    if (dependencyChanges.length > 0) {
-      parts.push('\nDependency changes:')
-      dependencyChanges.forEach(dep => parts.push(`- ${dep}`))
-    }
-
-    // Add stats
-    parts.push(`\nStats: ${diff.stats.additions} additions, ${diff.stats.deletions} deletions`)
-    parts.push('=== END CHANGED FILES ===\n')
 
     // Process diff to remove binary content
     const processedDiff = this.processDiffContent(diff)
@@ -313,8 +195,6 @@ export class OpenAIService {
       mergeInfo,
       sourceBranch,
       targetBranch,
-      hadConflicts,
-      conflictFiles
     } = await this.detectMergeInfo(
       processedDiff,
       userMessage,
@@ -322,32 +202,23 @@ export class OpenAIService {
     )
 
     if (confirmed) {
-      parts.push('\n=== MERGE COMMIT INFORMATION ===')
-      parts.push('This is a merge commit - use conventional commits format:')
-      parts.push('Type: chore')
-      parts.push('Scope: merge')
+      parts.push('\nThis is a merge commit.')
       if (sourceBranch && targetBranch) {
-        // Use more descriptive format for merge message
-        if (sourceBranch === 'main' || sourceBranch === 'master') {
-          parts.push(`\nMerging latest changes from ${sourceBranch} into ${targetBranch}`)
-        } else {
-          parts.push(`\nMerging ${sourceBranch} branch into ${targetBranch}`)
-        }
+        parts.push(`Merging from ${sourceBranch} into ${targetBranch}`)
       }
       if (mergeInfo) {
         parts.push('\nMerge details:')
         parts.push(...mergeInfo)
       }
-      if (hadConflicts) {
-        parts.push('\nConflict Resolution:')
-        if (conflictFiles?.length) {
-          parts.push(`${conflictFiles.length} files had conflicts that were resolved:`)
-          conflictFiles.forEach(file => parts.push(`- ${file}`))
-        } else {
-          parts.push('Merge had conflicts that were resolved (specific files could not be determined)')
-        }
-      }
-      parts.push('=== END MERGE INFORMATION ===\n')
+    }
+
+    // Add user guidance if provided
+    if (userMessage) {
+      parts.push('\nUser suggested message:')
+      parts.push(userMessage)
+      parts.push(
+        '\nConsider the above message as guidance, but ensure the commit message accurately reflects the actual changes.'
+      )
     }
 
     // Add recent commits context, but with clear instruction
@@ -356,7 +227,7 @@ export class OpenAIService {
       parts.push(
         '\nRecent commits (for context only, do not reference unless directly relevant):'
       )
-      recentCommits.forEach((commit: GitCommit) => {
+      recentCommits.forEach((commit) => {
         parts.push(
           `${commit.hash} (${commit.date}): ${commit.message}${
             commit.refs ? ` ${commit.refs}` : ''
@@ -365,9 +236,15 @@ export class OpenAIService {
       })
     }
 
-    // Add diff content last and only if not too large
-    if (!processedDiff.stats.wasSummarized && processedDiff.summary.length < 1000) {
-      parts.push('\nDetailed changes (if needed for context):')
+    // Add diff information with clear priority
+    parts.push('\nCurrent changes (primary focus for commit message):')
+    if (processedDiff.stats.wasSummarized) {
+      parts.push(processedDiff.summary)
+      parts.push(`\nFiles changed: ${processedDiff.stats.filesChanged}`)
+      parts.push(`Additions: ${processedDiff.stats.additions}`)
+      parts.push(`Deletions: ${processedDiff.stats.deletions}`)
+    } else {
+      parts.push('\nRaw diff:')
       parts.push(processedDiff.summary)
     }
 
@@ -488,19 +365,8 @@ export class OpenAIService {
 
     const prompt = await this.buildPrompt(diff, userMessage)
 
-    // Log model info and full request details in debug mode
-    LoggerService.debug('\n🤖 OpenAI Request Details:')
-    LoggerService.debug(`Model: ${this.config.model}`)
-    LoggerService.debug(`Configuration: ${JSON.stringify({
-      maxTokens: this.config.maxTokens,
-      temperature: this.config.temperature,
-      topP: this.config.topP,
-      frequencyPenalty: this.config.frequencyPenalty,
-      presencePenalty: this.config.presencePenalty,
-    }, null, 2)}`)
-    
-    LoggerService.debug('\n📝 Complete Prompt:')
-    LoggerService.debug(prompt)
+    // Log model info
+    LoggerService.debug(`\n🤖 Model: ${this.config.model}`)
 
     const messages: ChatCompletionMessageParam[] = [
       {
@@ -517,8 +383,13 @@ export class OpenAIService {
       },
     ]
 
-    LoggerService.debug('\n💬 Complete Messages Array:')
-    LoggerService.debug(JSON.stringify(messages, null, 2))
+    LoggerService.debug('\n🔍 Building OpenAI Request:')
+    LoggerService.debug(`Model: ${this.config.model}`)
+    LoggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
+    LoggerService.debug(`Temperature: ${this.config.temperature}`)
+    LoggerService.debug('Messages:')
+    LoggerService.debug(`system: ${messages[0].content}`)
+    LoggerService.debug('user: <diff content omitted>')
 
     LoggerService.debug('\n📤 Sending request to OpenAI...')
 
@@ -534,7 +405,7 @@ export class OpenAIService {
 
     LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
 
-    LoggerService.debug('\n📥 Complete OpenAI Response:')
+    LoggerService.debug('\n📥 Received response from OpenAI:')
     LoggerService.debug(JSON.stringify(response, null, 2))
 
     const content = response.choices[0]?.message?.content
