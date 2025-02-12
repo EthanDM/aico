@@ -67,8 +67,10 @@ feat, fix, docs, style, refactor, test, chore, perf, build, ci, revert
 
 SCOPE:
 - Optional but recommended
-- Must be lowercase
-- Represents the part of the codebase being changed (e.g., ui, auth, build, readme, tests)
+- Must be lowercase with hyphens (kebab-case)
+- Examples: ui, auth, store-review, user-profile
+- Never use camelCase, PascalCase, or snake_case
+- Represents the part of the codebase being changed
 
 DESCRIPTION:
 - A concise, imperative summary of the changes (e.g., "reorganize component structure")
