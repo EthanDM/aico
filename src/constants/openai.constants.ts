@@ -74,13 +74,32 @@ When you see changes to dependency-related files:
    - build(deps): for package.json, yarn.lock, package-lock.json
    - build(pods): for Podfile, Podfile.lock
    - build(gems): for Gemfile, Gemfile.lock
-2. Be specific about what changed:
+   - build(patches): for patch files in patches/ directory
+2. Be specific but concise about what changed:
    - For lock files: "update dependencies" or "reinstall dependencies"
    - For manifest files: describe what was added/removed/updated
+   - For patch files: use a summary when multiple files are changed, avoid listing every file
 3. Examples:
    - build(pods): reinstall pod dependencies
    - build(deps): update react-native to 0.71.0
-   - build(gems): add fastlane dependency
+   - build(patches): update dependency patches for simulator support
+   - build(patches): sync patch files with latest dependency versions
+
+When handling multiple similar changes:
+1. Group related changes together instead of listing each file
+2. Focus on the purpose or impact of the changes
+3. Avoid listing individual files unless there's a specific reason to highlight them
+4. For patch files especially, focus on the overall purpose of the patches rather than listing each one
+
+Examples of good patch-related messages:
+✓ build(patches): update react-native dependency patches for iOS 15 support
+✓ build(patches): sync patch files with latest dependency versions
+✓ build(patches): update patches for simulator compatibility
+
+Examples of bad patch-related messages:
+✗ build(patches): update patch1.patch, patch2.patch, patch3.patch (too verbose)
+✗ build(patches): update 10 patch files (too vague)
+✗ build(patches): update patches (not descriptive enough)
 
 SCOPE:
 - Optional but recommended
