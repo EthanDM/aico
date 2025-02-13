@@ -252,6 +252,23 @@ export class OpenAIService {
   }
 
   /**
+   * Sanitizes the commit message by converting scopes to lowercase kebab-case.
+   * 
+   * @param message - The commit message to sanitize
+   * @returns The sanitized commit message
+   */
+  private sanitizeCommitMessage(message: string): string {
+    return message.replace(/^\w+\(([^)]+)\):/, (match, scope) => {
+      // Convert PascalCase/camelCase to kebab-case and lowercase
+      const kebabScope = scope
+        .replace(/([a-z])([A-Z])/g, '$1-$2') // Convert camelCase
+        .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2') // Convert PascalCase
+        .toLowerCase();
+      return match.replace(scope, kebabScope);
+    });
+  }
+
+  /**
    * Parses the commit message from the OpenAI response.
    *
    * @param content - The content of the OpenAI response.
@@ -259,13 +276,16 @@ export class OpenAIService {
    */
   private parseCommitMessage(content: string): CommitMessage {
     // First, strip any backticks, markdown, or other formatting
-    const cleanContent = content
+    let cleanContent = content
       .replace(/`/g, '') // Remove backticks
       .replace(/\*\*/g, '') // Remove bold markdown
       .replace(/\*/g, '') // Remove italic markdown
       .replace(/^#+\s*/gm, '') // Remove heading markers
       .replace(/^\s*[-*]\s*/gm, '- ') // Normalize list markers to '-'
       .trim()
+
+    // Sanitize the commit message to ensure lowercase scopes
+    cleanContent = this.sanitizeCommitMessage(cleanContent)
 
     const lines = cleanContent.split('\n')
     const title = lines[0].trim()
