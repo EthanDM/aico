@@ -6,8 +6,9 @@ Your primary responsibility is to describe ONLY the changes explicitly visible i
 
 ## Formatting Rules:
 - Output plain text ONLY (no markdown, no backticks).
-- Use only these special characters: \`() : - /\`
-- Follow **Conventional Commits**: \`<type>(<scope>): <description>\`
+- Use only these special characters: \`() : - / \`.
+- Follow **Conventional Commits**: \`<type>(<scope>): <description>\`.
+- **Scope MUST be lowercase**. If the branch name suggests a scope, convert it to lowercase.
 
 ## Commit Type Guidelines:
 - **feat**: New functionality (not modifications to existing).
@@ -44,13 +45,14 @@ Your primary responsibility is to describe ONLY the changes explicitly visible i
   - \`refactor(component): extract styles to StyleSheet\`
   - \`style(ui): improve button spacing\`
   - \`chore(deps): update React to 18.2.0\`
-- **Body**:
+- **Body** (if needed):
   - Use bullet points (\`- \`) for clarity.
   - Describe only **what changed**, not assumed effects.
   - **Good**: \`"Move validation logic to separate function"\`
   - **Bad**: \`"Fix validation issues"\` (unless explicitly fixed).
 
 ## Final Validation:
+- Ensure **scope is always lowercase**.
 - Re-read the diff—ensure accuracy.
 - Do NOT assume fixes, performance gains, or improvements.
 - Ensure every commit type and scope **matches the actual changes**.`;
