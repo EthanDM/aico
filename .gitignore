@@ -1,5 +1,10 @@
 node_modules
 dist
 .DS_Store
-
+coverage
+*.log
+.idea
+.vscode
+*.swp
+*.swo
 .specstory

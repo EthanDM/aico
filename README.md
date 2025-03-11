@@ -1,5 +1,8 @@
 # aico
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+
 An AI-powered git commit message generator that creates conventional commit messages using OpenAI.
 
 ## Features
@@ -9,17 +12,18 @@ An AI-powered git commit message generator that creates conventional commit mess
 - 🔄 Interactive workflow with preview and edit options
 - 🌳 Considers git branch context and recent commits
 - 🎯 Supports user-provided message guidance
+- 🌿 Generates meaningful branch names
+- 🚀 Fast and efficient with GPT-4o-mini model
+- 🔒 Secure API key management
 
-## Installation
-
-### Prerequisites
+## Prerequisites
 
 - Node.js (v16 or higher)
 - npm (v7 or higher)
 - Git
 - OpenAI API key
 
-### Installation Steps
+## Installation
 
 1. Clone the repository:
 
@@ -41,9 +45,9 @@ An AI-powered git commit message generator that creates conventional commit mess
    npm link
    ```
 
-### Setting up your OpenAI API Key
+## Setting up your OpenAI API Key
 
-AICO requires an OpenAI API key to function. You have two options to provide it:
+AICO requires an OpenAI API key to function. You can get one from [OpenAI's website](https://platform.openai.com/api-keys). You have two options to provide it:
 
 1. **Recommended: Save it in your configuration** (one-time setup)
 
@@ -57,7 +61,26 @@ AICO requires an OpenAI API key to function. You have two options to provide it:
    ```bash
    export OPENAI_KEY=YOUR_API_KEY
    ```
-   You'll need to set this each time you open a new terminal, or add it to your shell's configuration file.
+   Add this to your shell's configuration file (e.g., .bashrc, .zshrc) to make it permanent.
+
+## Quick Start
+
+1. Stage your changes:
+
+   ```bash
+   git add .
+   ```
+
+2. Generate a commit message:
+
+   ```bash
+   aico
+   ```
+
+3. Or generate a branch name:
+   ```bash
+   aico -b
+   ```
 
 ## Configuration
 
@@ -68,7 +91,7 @@ AICO can be configured in several ways:
 ```bash
 Options:
   -d, --debug           Enable debug logging
-  -f, --full            Use full GPT-4o model for this commit
+  -f, --full            Use full GPT-4o model for this commit (default is mini)
   -c, --context         Prompt for user context before generating commit message
   --no-auto-stage       Disable automatic staging of changes
   --merge               Treat this as a merge commit
@@ -87,11 +110,17 @@ See `config.example.json` in the repository for a complete example of available 
 
 #### Model Configuration
 
-By default, AICO uses the GPT-4o-mini model for better performance and lower resource usage. You can:
+AICO uses GPT-4o-mini by default for better performance and lower resource usage. You can:
 
-- Use the full GPT-4o model for a single commit: `aico -f` or `aico --full`
+- Use the full GPT-4o model for a single commit: `aico -f`
 - Set GPT-4o as your default: `aico --set-default-model gpt-4o`
-- Set GPT-4o-mini as your default: `aico --set-default-model gpt-4o-mini`
+- Keep using GPT-4o-mini (default): `aico --set-default-model gpt-4o-mini`
+
+For large diffs (>30K characters), AICO will prompt you to:
+
+- Continue with GPT-4o (better quality, slightly higher cost)
+- Switch to GPT-4o-mini (faster, cheaper)
+- Cancel and break into smaller commits
 
 The configuration file supports the following options:
 
@@ -123,72 +152,40 @@ The configuration file supports the following options:
 
 - `OPENAI_KEY`: Your OpenAI API key (required)
 
-## Usage
+## Examples
 
-### Basic Usage
+### Basic Commit
 
 ```bash
-# Generate a commit message for staged changes
+# Stage changes and generate commit message
+git add .
 aico
 
-# Show debug information
-aico -d
-
-# Show help
-aico --help
+# Generate commit message with context
+aico -c
 ```
-
-### Interactive Workflow
-
-1. Stage your changes using `git add`
-2. Run `aico`
-3. Optionally provide context to guide the AI
-4. Review the generated commit message
-5. Choose an action:
-   - Accept and commit
-   - Edit message
-   - Regenerate message
-   - Cancel
-
-### Command Options
-
-```bash
-Options:
-  -d, --debug           Enable debug logging
-  -m, --mini            Use lighter GPT-4o-mini model
-  -c, --context         Prompt for user context before generating commit message
-  --no-auto-stage       Disable automatic staging of changes
-  -h, --help            Display help information
-```
-
-By default, aico will:
-
-1. Auto-stage all changes (use `--no-auto-stage` to disable)
-2. Skip user context prompt (use `-c` to enable)
-3. Always ask for confirmation before committing
-4. Use the GPT-4o-mini model for better performance (use `-f` for full GPT-4o model)
 
 ### Branch Name Generation
 
-AICO can also help you generate meaningful branch names based on your changes or description:
-
 ```bash
-# Generate a branch name
-aico -b
-
-# Generate a branch name with context
+# Generate a branch name for new feature
 aico -b -c
+# Enter context when prompted: "Add support for GitHub Actions integration"
+# Result: feat/add-github-actions-integration
 ```
 
-When generating branch names, you'll be prompted to:
+### Advanced Usage
 
-1. Provide context about the work you're planning
-2. Review the generated branch name
-3. Choose to:
-   - Create and switch to the branch
-   - Copy the branch name to clipboard
-   - Regenerate with new context
-   - Cancel
+```bash
+# Use full GPT-4o model for important commits
+aico -f
+
+# Generate merge commit message
+aico --merge
+
+# Skip auto-staging
+aico --no-auto-stage
+```
 
 ## Commit Message Format
 
@@ -212,32 +209,26 @@ Types:
 - `test`: Adding or modifying tests
 - `chore`: Maintenance tasks
 
-## Development
+## Interactive Workflow
 
-```bash
-# Clone the repository
-git clone <repository-url>
-
-# Install dependencies
-npm install
-
-# Build the project
-npm run build
-
-# Link for local development
-npm link
-
-# Run tests
-npm test
-
-# Run linting
-npm run lint
-```
+1. Stage your changes using `git add`
+2. Run `aico`
+3. Optionally provide context to guide the AI
+4. Review the generated commit message
+5. Choose an action:
+   - Accept and commit
+   - Edit message
+   - Regenerate message
+   - Cancel
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## Code of Conduct
+
+Please note that this project is released with a [Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT © [Ethan Millstein](LICENSE)
