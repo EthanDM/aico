@@ -2,8 +2,6 @@
 
 An AI-powered git commit message generator that creates conventional commit messages using OpenAI.
 
-chmod +x dist/cli.js && npm link
-
 ## Features
 
 - 🤖 Generates semantic commit messages using AI
@@ -21,17 +19,27 @@ chmod +x dist/cli.js && npm link
 - Git
 - OpenAI API key
 
-### Global Installation
+### Installation Steps
 
-```bash
-npm install -g aico
-```
+1. Clone the repository:
 
-### Local Installation
+   ```bash
+   git clone https://github.com/EthanDM/aico.git
+   cd aico
+   ```
 
-```bash
-npm install aico
-```
+2. Install dependencies and build:
+
+   ```bash
+   npm install
+   npm run build
+   ```
+
+3. Make the CLI executable and create a global link:
+   ```bash
+   chmod +x dist/cli.js
+   npm link
+   ```
 
 ### Setting up your OpenAI API Key
 
