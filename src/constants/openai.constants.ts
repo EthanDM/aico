@@ -45,14 +45,22 @@ Your primary responsibility is to describe ONLY the changes explicitly visible i
   - \`refactor(component): extract styles to StyleSheet\`
   - \`style(ui): improve button spacing\`
   - \`chore(deps): update React to 18.2.0\`
-- **Body** (if needed):
-  - Use bullet points (\`- \`) for clarity.
-  - Describe only **what changed**, not assumed effects.
-  - **Good**: \`"Move validation logic to separate function"\`
-  - **Bad**: \`"Fix validation issues"\` (unless explicitly fixed).
+- **Body** (Required in most cases, except very small commits):
+  - **Include 3-5 bullet points** describing specific changes.
+  - Use \`-\` for clarity.
+  - If the change is very small, **use at least 2 bullet points**.
+  - The body should be **as detailed as possible** while staying concise.
+  - Only **skip the body if the commit is trivial** (very rare).
+  - **Good examples:**
+    - \`"Extract styles into StyleSheet for better organization"\`
+    - \`"Move validation logic to a separate function"\`
+    - \`"Replace hardcoded API URL with environment variable"\`
+  - **Bad examples:**
+    - \`"Fix validation issues"\` (too vague)
+    - \`"Improve performance"\` (assumes impact without clear proof)
 
 ## Final Validation:
 - Ensure **scope is always lowercase**.
 - Re-read the diff—ensure accuracy.
-- Do NOT assume fixes, performance gains, or improvements.
-- Ensure every commit type and scope **matches the actual changes**.`;
+- **Always generate a commit body unless the commit is extremely small.**
+- Ensure every commit type and scope **matches the actual changes**.`
