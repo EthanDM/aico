@@ -67,13 +67,16 @@ AICO can be configured in several ways:
 
 ```bash
 Options:
-  -d, --debug            Enable debug logging
+  -d, --debug           Enable debug logging
   -f, --full            Use full GPT-4o model for this commit
   -c, --context         Prompt for user context before generating commit message
   --no-auto-stage       Disable automatic staging of changes
   --merge               Treat this as a merge commit
   --set-default-model   Set the default model (gpt-4o or gpt-4o-mini)
   --set-api-key         Set your OpenAI API key
+  -b, --branch          Generate a branch name instead of a commit message
+  -h, --help            Display help information
+  -v, --version         Output the version number
 ```
 
 ### Configuration File
@@ -99,7 +102,7 @@ The configuration file supports the following options:
     "maxTokens": 500, // Maximum tokens in response
     "temperature": 0.5, // Response creativity (0-1)
     "topP": 1, // Response diversity
-    "frequencyPenalty": 0, // Penalty for repetition
+    "frequencyPenalty": 0.2, // Penalty for repetition
     "presencePenalty": 0 // Penalty for new topics
   },
   "commit": {
@@ -151,7 +154,7 @@ aico --help
 
 ```bash
 Options:
-  -d, --debug            Enable debug logging
+  -d, --debug           Enable debug logging
   -m, --mini            Use lighter GPT-4o-mini model
   -c, --context         Prompt for user context before generating commit message
   --no-auto-stage       Disable automatic staging of changes
@@ -163,7 +166,29 @@ By default, aico will:
 1. Auto-stage all changes (use `--no-auto-stage` to disable)
 2. Skip user context prompt (use `-c` to enable)
 3. Always ask for confirmation before committing
-4. Use the full GPT-4o model (use `-m` for lighter model)
+4. Use the GPT-4o-mini model for better performance (use `-f` for full GPT-4o model)
+
+### Branch Name Generation
+
+AICO can also help you generate meaningful branch names based on your changes or description:
+
+```bash
+# Generate a branch name
+aico -b
+
+# Generate a branch name with context
+aico -b -c
+```
+
+When generating branch names, you'll be prompted to:
+
+1. Provide context about the work you're planning
+2. Review the generated branch name
+3. Choose to:
+   - Create and switch to the branch
+   - Copy the branch name to clipboard
+   - Regenerate with new context
+   - Cancel
 
 ## Commit Message Format
 
@@ -216,9 +241,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 MIT License - see LICENSE file for details
-
-Let's also create a shorter installation guide for your dotfiles:
-
-```
-
-```
