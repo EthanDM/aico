@@ -180,11 +180,42 @@ export class OpenAIService {
     diff: ProcessedDiff,
     userMessage?: string
   ): Promise<string> {
-    const parts = ['Generate a commit message for the following changes:']
+    const parts = [
+      'TASK: Generate a conventional commit message for these changes.',
+    ]
 
-    // Add branch context
+    // Add branch context for scope hints
     const branchName = await GitService.getBranchName()
-    parts.push(`\nCurrent branch: ${branchName}`)
+    if (
+      branchName &&
+      branchName !== 'main' &&
+      branchName !== 'master' &&
+      branchName !== 'develop'
+    ) {
+      // Extract potential scope from branch name
+      const branchParts = branchName.split(/[-_/]/)
+      const potentialScope = branchParts.find(
+        (part) =>
+          ![
+            'feat',
+            'fix',
+            'chore',
+            'docs',
+            'style',
+            'refactor',
+            'test',
+            'ci',
+          ].includes(part.toLowerCase())
+      )
+
+      if (potentialScope && potentialScope.length > 2) {
+        parts.push(
+          `BRANCH: ${branchName} (suggested scope: ${potentialScope.toLowerCase()})`
+        )
+      } else {
+        parts.push(`BRANCH: ${branchName}`)
+      }
+    }
 
     // Process diff to remove binary content
     const processedDiff = this.processDiffContent(diff)
@@ -202,58 +233,64 @@ export class OpenAIService {
     )
 
     if (confirmed) {
-      parts.push('\nThis is a merge commit.')
+      parts.push('\nCOMMIT TYPE: Merge commit')
       if (sourceBranch && targetBranch) {
-        parts.push(`Merging from ${sourceBranch} into ${targetBranch}`)
+        parts.push(`MERGE: ${sourceBranch} → ${targetBranch}`)
       }
       if (mergeInfo) {
-        parts.push('\nMerge details:')
+        parts.push('MERGE DETAILS:')
         parts.push(...mergeInfo)
       }
     }
 
-    // Add user guidance if provided
+    // Add user guidance if provided - but keep it focused
     if (userMessage) {
-      parts.push('\nUser suggested message:')
+      parts.push('\nUSER CONTEXT:')
       parts.push(userMessage)
       parts.push(
-        '\nConsider the above message as guidance, but ensure the commit message accurately reflects the actual changes.'
+        '(Use this as guidance but ensure the commit reflects actual changes)'
       )
     }
 
-    // Add recent commits context, but with clear instruction
-    const recentCommits = await GitService.getRecentCommits(5)
+    // Add recent commits context with clear purpose
+    const recentCommits = await GitService.getRecentCommits(3) // Reduced from 5 to 3
     if (recentCommits.length > 0) {
-      parts.push(
-        '\nRecent commits (for context only, do not reference unless directly relevant):'
-      )
+      parts.push('\nRECENT COMMITS (for consistency reference):')
       recentCommits.forEach((commit) => {
-        parts.push(
-          `${commit.hash} (${commit.date}): ${commit.message}${
-            commit.refs ? ` ${commit.refs}` : ''
-          }`
-        )
+        const shortMessage = commit.message.split('\n')[0] // Only first line
+        parts.push(`• ${shortMessage}`)
       })
     }
 
-    // Add diff information with clear priority
-    parts.push('\nCurrent changes (primary focus for commit message):')
+    // Add change analysis with clear structure
+    parts.push('\n' + '='.repeat(50))
+    parts.push('CHANGES TO ANALYZE:')
+    parts.push('='.repeat(50))
+
     if (processedDiff.stats.wasSummarized) {
       parts.push(processedDiff.summary)
-      parts.push(`\nFiles changed: ${processedDiff.stats.filesChanged}`)
-      parts.push(`Additions: ${processedDiff.stats.additions}`)
-      parts.push(`Deletions: ${processedDiff.stats.deletions}`)
+      parts.push(`\nCHANGE STATS:`)
+      parts.push(`• Files: ${processedDiff.stats.filesChanged}`)
+      parts.push(`• Additions: ${processedDiff.stats.additions} lines`)
+      parts.push(`• Deletions: ${processedDiff.stats.deletions} lines`)
     } else {
-      parts.push('\nRaw diff:')
       parts.push(processedDiff.summary)
     }
+
+    parts.push('\n' + '='.repeat(50))
+    parts.push('INSTRUCTIONS:')
+    parts.push('1. Analyze the changes above')
+    parts.push('2. Choose the most accurate commit type')
+    parts.push('3. Write a clear, specific commit message')
+    parts.push('4. Focus on the most significant changes')
+    parts.push('='.repeat(50))
 
     return parts.join('\n')
   }
 
   /**
    * Sanitizes the commit message by converting scopes to lowercase kebab-case.
-   * 
+   *
    * @param message - The commit message to sanitize
    * @returns The sanitized commit message
    */
@@ -263,9 +300,9 @@ export class OpenAIService {
       const kebabScope = scope
         .replace(/([a-z])([A-Z])/g, '$1-$2') // Convert camelCase
         .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2') // Convert PascalCase
-        .toLowerCase();
-      return match.replace(scope, kebabScope);
-    });
+        .toLowerCase()
+      return match.replace(scope, kebabScope)
+    })
   }
 
   /**
@@ -409,7 +446,7 @@ export class OpenAIService {
     LoggerService.debug(`Temperature: ${this.config.temperature}`)
     LoggerService.debug('Messages:')
     LoggerService.debug(`system: ${messages[0].content}`)
-    LoggerService.debug('user: <diff content omitted>')
+    LoggerService.debug(`user: ${prompt}`)
 
     LoggerService.debug('\n📤 Sending request to OpenAI...')
 

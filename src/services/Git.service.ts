@@ -179,24 +179,30 @@ class GitService {
    * Gets the staged changes with processed diff information.
    *
    * @param isMerge - Whether this is a merge commit
+   * @param modelType - The AI model being used (affects processing strategy)
    * @returns The processed diff of staged changes.
    */
   public async getStagedChanges(
-    isMerge: boolean = false
+    isMerge: boolean = false,
+    modelType: string = 'gpt-4o'
   ): Promise<ProcessedDiff> {
     const diff = await this.getStagedDiff()
-    return DiffProcessor.processDiff(diff, isMerge)
+    return DiffProcessor.processDiff(diff, isMerge, modelType)
   }
 
   /**
    * Gets all changes with processed diff information.
    *
    * @param isMerge - Whether this is a merge commit
+   * @param modelType - The AI model being used (affects processing strategy)
    * @returns The processed diff of all changes.
    */
-  public async getAllChanges(isMerge: boolean = false): Promise<ProcessedDiff> {
+  public async getAllChanges(
+    isMerge: boolean = false,
+    modelType: string = 'gpt-4o'
+  ): Promise<ProcessedDiff> {
     const diff = await this.getAllDiff()
-    return DiffProcessor.processDiff(diff, isMerge)
+    return DiffProcessor.processDiff(diff, isMerge, modelType)
   }
 
   /**

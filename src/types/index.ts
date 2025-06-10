@@ -42,6 +42,7 @@ export interface GitDiff {
   deletions: string[]
   rawDiff: string
   filteredRawDiff: string
+  changePatterns?: string[]
 }
 
 /**
@@ -57,6 +58,7 @@ export interface ProcessedDiff {
     additions: number
     deletions: number
     wasSummarized: boolean
+    qualityIndicator?: string
   }
   isMerge?: boolean
 }

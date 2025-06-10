@@ -19,8 +19,10 @@ interface WorkflowOptions {
 class WorkflowService {
   private openai
   private options: WorkflowOptions
+  private config: Config
 
   constructor(config: Config, options: WorkflowOptions = {}) {
+    this.config = config
     this.options = {
       context: options.context || false,
       noAutoStage: options.noAutoStage || false,
@@ -87,7 +89,10 @@ class WorkflowService {
     }
 
     // Get the staged changes after staging is handled
-    const diff = await GitService.getStagedChanges(this.options.merge)
+    const diff = await GitService.getStagedChanges(
+      this.options.merge,
+      this.config.openai.model
+    )
     AppLogService.gitStats(diff)
 
     // Get user context if enabled
@@ -177,7 +182,10 @@ class WorkflowService {
       // If there are staged changes, include them in the context
       const { stagedCount } = await GitService.getChangeCount()
       if (stagedCount > 0) {
-        diff = await GitService.getStagedChanges()
+        diff = await GitService.getStagedChanges(
+          false,
+          this.config.openai.model
+        )
         AppLogService.gitStats(diff)
       }
     } catch (error) {
