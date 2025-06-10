@@ -452,11 +452,16 @@ class DiffProcessor {
       // Optimal range - use full diff for best accuracy and attention
       summary = filteredRawDiff
     } else if (filteredRawDiff.length <= EXTENDED_LIMIT) {
-      // Extended range - still use full diff but expect slightly reduced attention quality
-      summary = filteredRawDiff
-      // Note: Could add a warning here about commit size for user feedback
+      // Extended range - use priority extraction + summary for focused accuracy
+      // This gives us the most important changes in raw form while summarizing the rest
+      const { meaningfulSections } = this.extractMeaningfulDiff(
+        filteredRawDiff,
+        Math.floor(OPTIMAL_LIMIT * 0.6) // Use 60% for priority sections, 40% for summary
+      )
+      summary = this.createHybridSummary(details, meaningfulSections)
+      wasSummarized = true
     } else if (filteredRawDiff.length <= FALLBACK_LIMIT * 2) {
-      // Large diff - use intelligent hybrid approach
+      // Large diff - use more conservative hybrid approach
       const { meaningfulSections } = this.extractMeaningfulDiff(
         filteredRawDiff,
         Math.floor(FALLBACK_LIMIT * 0.8) // Reserve 20% for structure
@@ -505,11 +510,11 @@ class DiffProcessor {
     const extended = isMini ? 45000 : 70000
 
     if (diffLength <= optimal) {
-      return 'optimal' // Highest accuracy expected
+      return 'optimal' // Full diff, highest accuracy
     } else if (diffLength <= extended) {
-      return 'good' // Good accuracy, minor attention dilution
+      return 'focused' // Priority extraction + summary, high accuracy
     } else {
-      return 'reduced' // Accuracy may be reduced due to summarization
+      return 'summarized' // Structured summary, good accuracy but some detail loss
     }
   }
 }
