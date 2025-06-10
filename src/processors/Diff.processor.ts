@@ -23,21 +23,65 @@ class DiffProcessor {
    * @returns The file type category
    */
   private getFileType(filePath: string): string {
-    const ext = filePath.split('.').pop()?.toLowerCase()
+    const fileName = filePath.toLowerCase()
+    const ext = fileName.split('.').pop()
 
     if (!ext) return 'other'
 
+    // Priority checks for test files (check before extension mapping)
+    if (
+      fileName.includes('.test.') ||
+      fileName.includes('.spec.') ||
+      fileName.includes('__tests__') ||
+      fileName.includes('__mocks__') ||
+      fileName.includes('.stories.') ||
+      fileName.includes('cypress/') ||
+      fileName.includes('e2e/') ||
+      fileName.includes('playwright/')
+    ) {
+      return 'test'
+    }
+
+    // Configuration files (check before generic extensions)
+    if (
+      fileName.includes('config') ||
+      fileName.includes('webpack') ||
+      fileName.includes('vite') ||
+      fileName.includes('rollup') ||
+      fileName.includes('babel') ||
+      fileName.includes('eslint') ||
+      fileName.includes('prettier') ||
+      fileName.includes('tsconfig') ||
+      fileName.includes('jest') ||
+      fileName.includes('package.json') ||
+      fileName.includes('docker') ||
+      fileName.includes('.env')
+    ) {
+      return 'config'
+    }
+
     const typeMap: Record<string, string> = {
-      // Frontend
+      // Frontend frameworks
       tsx: 'react',
       jsx: 'react',
       vue: 'vue',
+      svelte: 'svelte',
+      astro: 'astro',
+
+      // Markup and styles
       html: 'markup',
+      htm: 'markup',
       css: 'styles',
       scss: 'styles',
       sass: 'styles',
-      // Backend
+      less: 'styles',
+      styl: 'styles',
+      stylus: 'styles',
+
+      // Backend languages
       js: 'javascript',
+      mjs: 'javascript',
+      cjs: 'javascript',
       ts: 'typescript',
       py: 'python',
       java: 'java',
@@ -45,31 +89,43 @@ class DiffProcessor {
       rs: 'rust',
       php: 'php',
       rb: 'ruby',
-      // Config/Data
+      cs: 'csharp',
+      cpp: 'cpp',
+      c: 'c',
+      kt: 'kotlin',
+      swift: 'swift',
+
+      // Configuration formats
       json: 'config',
       yaml: 'config',
       yml: 'config',
       toml: 'config',
+      ini: 'config',
       xml: 'config',
-      env: 'config',
+      conf: 'config',
+
       // Documentation
       md: 'docs',
+      mdx: 'docs',
       rst: 'docs',
       txt: 'docs',
-      // Testing
-      'test.js': 'test',
-      'test.ts': 'test',
-      'spec.js': 'test',
-      'spec.ts': 'test',
-    }
+      adoc: 'docs',
 
-    // Check for test files first
-    if (
-      filePath.includes('.test.') ||
-      filePath.includes('.spec.') ||
-      filePath.includes('__tests__')
-    ) {
-      return 'test'
+      // Database and queries
+      sql: 'database',
+      graphql: 'database',
+      gql: 'database',
+
+      // Stylesheets and templates
+      handlebars: 'template',
+      hbs: 'template',
+      mustache: 'template',
+      twig: 'template',
+      ejs: 'template',
+
+      // Mobile development
+      dart: 'mobile',
+      kotlin: 'mobile',
     }
 
     return typeMap[ext] || 'other'
@@ -132,22 +188,58 @@ class DiffProcessor {
   private extractFunctionChanges(diff: string): string[] {
     const changes: string[] = []
     const patterns = [
-      // JavaScript/TypeScript functions
-      /^[\+\-].*(?:function|const|let|var)\s+(\w+)/gm,
-      // Class methods and properties
-      /^[\+\-].*(?:class|interface)\s+(\w+)/gm,
-      // React components
-      /^[\+\-].*(?:export\s+(?:default\s+)?(?:function|const))\s+(\w+)/gm,
-      // Hooks and utilities
-      /^[\+\-].*(?:use[A-Z]\w*|create[A-Z]\w*)\s*[=:]/gm,
+      // JavaScript/TypeScript functions - improved patterns
+      {
+        pattern:
+          /^[\+\-].*(?:function\s+(\w+)|const\s+(\w+)\s*=.*(?:function|\(.*\)\s*=>)|let\s+(\w+)\s*=.*(?:function|\(.*\)\s*=>)|var\s+(\w+)\s*=.*(?:function|\(.*\)\s*=>))/gm,
+        name: 'function',
+      },
+
+      // Class and interface definitions
+      {
+        pattern:
+          /^[\+\-].*(?:class\s+(\w+)|interface\s+(\w+)|enum\s+(\w+)|type\s+(\w+)\s*=)/gm,
+        name: 'type',
+      },
+
+      // React components and hooks - more specific
+      {
+        pattern:
+          /^[\+\-].*(?:export\s+(?:default\s+)?(?:function|const)\s+([A-Z]\w*)|const\s+([A-Z]\w*)\s*=.*(?:React\.FC|React\.Component|\(.*\)\s*=>\s*{|\(.*\)\s*=>\s*\())/gm,
+        name: 'component',
+      },
+
+      // React hooks
+      {
+        pattern:
+          /^[\+\-].*(?:const\s+(use[A-Z]\w*)\s*=|function\s+(use[A-Z]\w*)\s*\()/gm,
+        name: 'hook',
+      },
+
+      // Method definitions in classes/objects
+      {
+        pattern:
+          /^[\+\-].*(?:(\w+)\s*\(.*\)\s*{|(\w+):\s*(?:function|\(.*\)\s*=>))/gm,
+        name: 'method',
+      },
+
+      // Arrow functions assigned to variables
+      { pattern: /^[\+\-].*const\s+(\w+)\s*=\s*\(.*\)\s*=>/gm, name: 'arrow' },
     ]
 
-    patterns.forEach((pattern) => {
+    patterns.forEach(({ pattern, name }) => {
       let match
+      pattern.lastIndex = 0 // Reset regex state
+
       while ((match = pattern.exec(diff)) !== null) {
         const prefix = diff[match.index] === '+' ? 'Added' : 'Removed'
-        const name = match[1] || 'anonymous'
-        changes.push(`${prefix}: ${name}`)
+        // Find the first non-empty capture group
+        const functionName =
+          match.slice(1).find((group) => group && group.trim()) || 'anonymous'
+
+        if (functionName && functionName !== 'anonymous') {
+          changes.push(`${prefix}: ${functionName} (${name})`)
+        }
       }
     })
 
@@ -166,7 +258,9 @@ class DiffProcessor {
     // Count line changes for scale assessment
     const addedLines = (diff.match(/^\+(?!\+\+)/gm) || []).length
     const removedLines = (diff.match(/^-(?!--)/gm) || []).length
+    const totalLines = addedLines + removedLines
 
+    // Change scale analysis
     if (addedLines > removedLines * 2) {
       patterns.push('Primarily additions (new functionality)')
     } else if (removedLines > addedLines * 2) {
@@ -175,33 +269,144 @@ class DiffProcessor {
       patterns.push('Mixed additions and deletions (refactoring)')
     }
 
-    // Check for specific patterns
-    if (diff.includes('import') || diff.includes('require')) {
-      patterns.push('Dependencies modified')
+    // Dependency and import analysis
+    const importCount = (diff.match(/^[\+\-].*(?:import|require|from)/gm) || [])
+      .length
+    if (importCount > 0) {
+      if (importCount > totalLines * 0.3) {
+        patterns.push('Major dependency restructuring')
+      } else {
+        patterns.push('Dependencies modified')
+      }
     }
 
+    // Test-related changes
     if (
       diff.includes('test') ||
       diff.includes('spec') ||
-      diff.includes('describe')
+      diff.includes('describe') ||
+      diff.includes('it(') ||
+      diff.includes('expect(') ||
+      diff.includes('jest') ||
+      diff.includes('cypress') ||
+      diff.includes('playwright')
     ) {
       patterns.push('Tests involved')
     }
 
+    // Styling and UI changes
     if (
       diff.includes('style') ||
       diff.includes('css') ||
-      diff.includes('className')
+      diff.includes('className') ||
+      diff.includes('styled') ||
+      diff.includes('theme') ||
+      diff.includes('color') ||
+      diff.includes('margin') ||
+      diff.includes('padding')
     ) {
       patterns.push('Styling changes')
     }
 
+    // Configuration changes
     if (
+      diff.includes('config') ||
+      diff.includes('env') ||
+      diff.includes('webpack') ||
+      diff.includes('babel') ||
+      diff.includes('eslint') ||
+      diff.includes('prettier') ||
+      diff.includes('package.json') ||
+      diff.includes('tsconfig')
+    ) {
+      patterns.push('Configuration changes')
+    }
+
+    // API and backend changes
+    if (
+      diff.includes('api') ||
+      diff.includes('endpoint') ||
+      diff.includes('route') ||
+      diff.includes('controller') ||
+      diff.includes('service') ||
+      diff.includes('middleware') ||
+      diff.includes('database') ||
+      diff.includes('model')
+    ) {
+      patterns.push('Backend/API changes')
+    }
+
+    // Documentation changes
+    if (
+      diff.includes('README') ||
+      diff.includes('doc') ||
+      diff.includes('comment') ||
+      diff.includes('/**') ||
       diff.includes('TODO') ||
       diff.includes('FIXME') ||
-      diff.includes('XXX')
+      diff.includes('XXX') ||
+      diff.includes('NOTE')
     ) {
-      patterns.push('Code comments/TODOs updated')
+      patterns.push('Documentation/comments updated')
+    }
+
+    // Security-related changes
+    if (
+      diff.includes('auth') ||
+      diff.includes('security') ||
+      diff.includes('token') ||
+      diff.includes('password') ||
+      diff.includes('permission') ||
+      diff.includes('validation') ||
+      diff.includes('sanitize') ||
+      diff.includes('csrf')
+    ) {
+      patterns.push('Security-related changes')
+    }
+
+    // Performance-related changes
+    if (
+      diff.includes('performance') ||
+      diff.includes('optimize') ||
+      diff.includes('cache') ||
+      diff.includes('lazy') ||
+      diff.includes('memo') ||
+      diff.includes('debounce') ||
+      diff.includes('throttle') ||
+      diff.includes('async') ||
+      diff.includes('await')
+    ) {
+      patterns.push('Performance-related changes')
+    }
+
+    // UI/UX changes
+    if (
+      diff.includes('component') ||
+      diff.includes('jsx') ||
+      diff.includes('tsx') ||
+      diff.includes('react') ||
+      diff.includes('vue') ||
+      diff.includes('render') ||
+      diff.includes('props') ||
+      diff.includes('state') ||
+      diff.includes('hook')
+    ) {
+      patterns.push('UI/Component changes')
+    }
+
+    // Error handling and debugging
+    if (
+      diff.includes('error') ||
+      diff.includes('exception') ||
+      diff.includes('catch') ||
+      diff.includes('try') ||
+      diff.includes('debug') ||
+      diff.includes('console.log') ||
+      diff.includes('logger') ||
+      diff.includes('warn') ||
+      diff.includes('fatal')
+    ) {
+      patterns.push('Error handling/debugging')
     }
 
     return patterns
@@ -288,31 +493,102 @@ class DiffProcessor {
 
     // Priority patterns for meaningful extraction
     const priorities = [
-      // Function definitions and changes
+      // Priority 1: Core functionality changes
       {
-        pattern: /^[+-].*(?:function|const|let|var|class|interface)\s+\w+/,
+        pattern:
+          /^[+-].*(?:function\s+\w+|const\s+\w+\s*=.*(?:function|\(.*\)\s*=>)|class\s+\w+|interface\s+\w+|export\s+(?:default\s+)?(?:function|class|const))/,
         priority: 1,
+        description: 'Core function/class definitions',
       },
-      // Import/export changes
-      { pattern: /^[+-].*(?:import|export|from|require)/, priority: 1 },
-      // React component changes
-      { pattern: /^[+-].*(?:return\s*\(|jsx|tsx|<\w+)/, priority: 2 },
-      // Type definitions
-      { pattern: /^[+-].*(?:type|interface|enum)\s+\w+/, priority: 2 },
-      // Configuration changes
-      { pattern: /^[+-].*(?:"[^"]*":\s*|config|setup|options)/, priority: 3 },
+
+      // Priority 1: Import/export changes (architecture changes)
+      {
+        pattern: /^[+-].*(?:import|export|from|require)/,
+        priority: 1,
+        description: 'Import/export changes',
+      },
+
+      // Priority 1: API routes and endpoints
+      {
+        pattern:
+          /^[+-].*(?:router\.|app\.|\.get\(|\.post\(|\.put\(|\.delete\(|api|endpoint)/,
+        priority: 1,
+        description: 'API/route definitions',
+      },
+
+      // Priority 2: React components and hooks
+      {
+        pattern:
+          /^[+-].*(?:return\s*\(|jsx|tsx|<[A-Z]\w*|use[A-Z]\w*|React\.|useState|useEffect)/,
+        priority: 2,
+        description: 'React components/hooks',
+      },
+
+      // Priority 2: Type definitions and interfaces
+      {
+        pattern: /^[+-].*(?:type\s+\w+\s*=|interface\s+\w+|enum\s+\w+)/,
+        priority: 2,
+        description: 'Type definitions',
+      },
+
+      // Priority 2: Database models and schemas
+      {
+        pattern: /^[+-].*(?:schema|model|table|migration|sql|query|database)/,
+        priority: 2,
+        description: 'Database/model changes',
+      },
+
+      // Priority 3: Configuration and setup
+      {
+        pattern:
+          /^[+-].*(?:"[^"]*":\s*|config|setup|options|settings|\.env|package\.json)/,
+        priority: 3,
+        description: 'Configuration changes',
+      },
+
+      // Priority 3: Test files and specs
+      {
+        pattern:
+          /^[+-].*(?:describe\(|it\(|test\(|expect\(|jest|cypress|spec|\.test\.)/,
+        priority: 3,
+        description: 'Test changes',
+      },
+
+      // Priority 3: Error handling and validation
+      {
+        pattern:
+          /^[+-].*(?:try\s*{|catch\s*\(|throw|error|exception|validate|sanitize)/,
+        priority: 3,
+        description: 'Error handling/validation',
+      },
+
+      // Priority 4: Styling and visual changes
+      {
+        pattern:
+          /^[+-].*(?:style|css|className|styled|theme|color|margin|padding|flex|grid)/,
+        priority: 4,
+        description: 'Styling changes',
+      },
+
+      // Priority 4: Documentation and comments
+      {
+        pattern: /^[+-].*(?:\/\*\*|\/\/|TODO|FIXME|NOTE|README|documentation)/,
+        priority: 4,
+        description: 'Documentation/comments',
+      },
     ]
 
     // Extract by priority
-    for (const { pattern, priority } of priorities) {
+    for (const { pattern, priority, description } of priorities) {
       for (let i = 0; i < lines.length; i++) {
         if (processedLines.has(i)) continue
 
         const line = lines[i]
         if (pattern.test(line)) {
-          // Include context around meaningful lines (2 lines before/after)
-          const contextStart = Math.max(0, i - 2)
-          const contextEnd = Math.min(lines.length - 1, i + 2)
+          // Include context around meaningful lines (2 lines before/after for priority 1-2, 1 line for priority 3-4)
+          const contextRadius = priority <= 2 ? 2 : 1
+          const contextStart = Math.max(0, i - contextRadius)
+          const contextEnd = Math.min(lines.length - 1, i + contextRadius)
 
           const contextLines = []
           for (let j = contextStart; j <= contextEnd; j++) {
@@ -324,17 +600,22 @@ class DiffProcessor {
 
           const section = contextLines.join('\n')
           if (totalChars + section.length < limit) {
-            meaningfulSections.push(`=== Priority ${priority} Change ===`)
+            meaningfulSections.push(`=== ${description} ===`)
             meaningfulSections.push(section)
             meaningfulSections.push('') // Empty line separator
-            totalChars += section.length + 30 // Account for headers
+            totalChars += section.length + description.length + 10 // Account for headers
           } else {
             break
           }
         }
       }
 
-      if (totalChars >= limit * 0.8) break // Stop if we're near the limit
+      // Stop early if we've used most of our allocation or covered high-priority items
+      if (
+        totalChars >= limit * 0.9 ||
+        (priority <= 2 && totalChars >= limit * 0.7)
+      )
+        break
     }
 
     // Create remaining diff without processed lines
