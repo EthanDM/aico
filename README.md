@@ -3,232 +3,321 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-An AI-powered git commit message generator that creates conventional commit messages using OpenAI.
+An intelligent AI-powered CLI tool that generates semantic git commit messages and branch names using OpenAI's GPT models. Built with TypeScript and designed for developer productivity.
 
-## Features
+## 🎯 Overview
 
-- 🤖 Generates semantic commit messages using AI
-- 📝 Follows [Conventional Commits](https://www.conventionalcommits.org/) format
-- 🔄 Interactive workflow with preview and edit options
-- 🌳 Considers git branch context and recent commits
-- 🎯 Supports user-provided message guidance
-- 🌿 Generates meaningful branch names
-- 🚀 Fast and efficient with GPT-4o-mini model
-- 🔒 Secure API key management
+AICO (AI Commits) analyzes your git changes and automatically generates conventional commit messages that follow best practices. It understands code context, considers recent commits, and creates meaningful, consistent commit messages that improve project history readability.
 
-## Prerequisites
+## ✨ Key Features
 
-- Node.js (v16 or higher)
-- npm (v7 or higher)
+- 🤖 **AI-Powered Generation**: Uses OpenAI GPT-4o models to understand code changes
+- 📝 **Conventional Commits**: Follows [Conventional Commits](https://www.conventionalcommits.org/) specification
+- 🔄 **Interactive Workflow**: Preview, edit, regenerate, or accept generated messages
+- 🌳 **Smart Context**: Analyzes git branch names, recent commits, and diff patterns
+- 🌿 **Branch Name Generation**: Creates semantic branch names from descriptions
+- ⚡ **Performance Optimized**: Uses GPT-4o-mini by default for speed and cost efficiency
+- 🛡️ **Secure Configuration**: Safe API key storage in user config directory
+- 🎨 **Rich CLI Experience**: Colorful interface with figlet banners and progress indicators
+
+## 🏗️ Architecture
+
+The project follows a service-oriented architecture with clear separation of concerns:
+
+```
+src/
+├── cli.ts                    # CLI entry point
+├── services/                 # Core business logic
+│   ├── Config.service.ts     # Configuration management
+│   ├── OpenAI.service.ts     # OpenAI API integration
+│   ├── Git.service.ts        # Git operations
+│   ├── UI.service.ts         # User interface interactions
+│   ├── Workflow.service.ts   # Main application workflow
+│   ├── Program.service.ts    # CLI program setup
+│   ├── AppLog.service.ts     # Application logging
+│   └── Logger.service.ts     # Generic logging utility
+├── processors/
+│   └── Diff.processor.ts     # Git diff analysis and processing
+├── constants/
+│   ├── openai.constants.ts   # OpenAI system prompts
+│   └── patterns.ts           # Regex patterns for parsing
+└── types/
+    └── index.ts              # TypeScript type definitions
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js 16+
+- npm 7+
 - Git
-- OpenAI API key
+- OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
 
-## Installation
+### Installation
 
-1. Clone the repository:
+1. **Clone and build**:
 
    ```bash
    git clone https://github.com/EthanDM/aico.git
    cd aico
-   ```
-
-2. Install dependencies and build:
-
-   ```bash
    npm install
    npm run build
    ```
 
-3. Make the CLI executable and create a global link:
+2. **Make globally available**:
+
    ```bash
    chmod +x dist/cli.js
    npm link
    ```
 
-## Setting up your OpenAI API Key
-
-AICO requires an OpenAI API key to function. You can get one from [OpenAI's website](https://platform.openai.com/api-keys). You have two options to provide it:
-
-1. **Recommended: Save it in your configuration** (one-time setup)
-
+3. **Set up your API key** (one-time setup):
    ```bash
-   aico --set-api-key YOUR_API_KEY
+   aico --set-api-key YOUR_OPENAI_API_KEY
    ```
 
-   This saves your API key securely in `~/.config/aico/config.json`
+### Basic Usage
 
-2. **Alternative: Use an environment variable**
-   ```bash
-   export OPENAI_KEY=YOUR_API_KEY
-   ```
-   Add this to your shell's configuration file (e.g., .bashrc, .zshrc) to make it permanent.
+```bash
+# Stage your changes
+git add .
 
-## Quick Start
+# Generate and apply commit message
+aico
 
-1. Stage your changes:
+# Generate with user context
+aico -c
 
-   ```bash
-   git add .
-   ```
+# Generate branch name
+aico -b -c
+```
 
-2. Generate a commit message:
-
-   ```bash
-   aico
-   ```
-
-3. Or generate a branch name:
-   ```bash
-   aico -b
-   ```
-
-## Configuration
-
-AICO can be configured in several ways:
+## 🛠️ Configuration
 
 ### Command Line Options
 
 ```bash
+aico [options]
+
 Options:
-  -d, --debug           Enable debug logging
-  -f, --full            Use full GPT-4o model for this commit (default is mini)
-  -c, --context         Prompt for user context before generating commit message
-  --no-auto-stage       Disable automatic staging of changes
-  --merge               Treat this as a merge commit
-  --set-default-model   Set the default model (gpt-4o or gpt-4o-mini)
-  --set-api-key         Set your OpenAI API key
-  -b, --branch          Generate a branch name instead of a commit message
-  -h, --help            Display help information
-  -v, --version         Output the version number
+  -d, --debug              Enable debug logging with detailed output
+  -f, --full               Use GPT-4o model instead of default GPT-4o-mini
+  -c, --context            Prompt for user context before generation
+  --no-auto-stage          Disable automatic staging of changes
+  --merge                  Generate merge commit message
+  --set-default-model      Set default model (gpt-4o | gpt-4o-mini)
+  --set-api-key           Save OpenAI API key to config
+  -b, --branch            Generate branch name instead of commit message
+  -h, --help              Display help information
+  -v, --version           Show version number
 ```
 
 ### Configuration File
 
-AICO looks for a configuration file at `~/.config/aico/config.json`. You can create this file manually or use the `--set-default-model` option to manage model settings.
-
-See `config.example.json` in the repository for a complete example of available options.
-
-#### Model Configuration
-
-AICO uses GPT-4o-mini by default for better performance and lower resource usage. You can:
-
-- Use the full GPT-4o model for a single commit: `aico -f`
-- Set GPT-4o as your default: `aico --set-default-model gpt-4o`
-- Keep using GPT-4o-mini (default): `aico --set-default-model gpt-4o-mini`
-
-For large diffs (>30K characters), AICO will prompt you to:
-
-- Continue with GPT-4o (better quality, slightly higher cost)
-- Switch to GPT-4o-mini (faster, cheaper)
-- Cancel and break into smaller commits
-
-The configuration file supports the following options:
+AICO stores configuration in `~/.config/aico/config.json`:
 
 ```json
 {
   "openai": {
-    "model": "gpt-4o-mini", // Model to use (gpt-4o or gpt-4o-mini)
-    "maxTokens": 500, // Maximum tokens in response
-    "temperature": 0.5, // Response creativity (0-1)
+    "model": "gpt-4o-mini", // Model selection
+    "maxTokens": 500, // Response length limit
+    "temperature": 0.5, // Creativity level (0-1)
     "topP": 1, // Response diversity
-    "frequencyPenalty": 0.2, // Penalty for repetition
-    "presencePenalty": 0 // Penalty for new topics
+    "frequencyPenalty": 0, // Repetition penalty
+    "presencePenalty": 0 // Topic novelty penalty
   },
   "commit": {
-    "maxTitleLength": 72, // Maximum length of commit title
-    "maxBodyLength": 500, // Maximum length of commit body
-    "wrapBody": 72, // Wrap commit body at this column
-    "includeBody": true, // Include body in commit message
-    "includeFooter": true // Include footer in commit message
+    "maxTitleLength": 72, // Commit title character limit
+    "maxBodyLength": 500, // Commit body character limit
+    "wrapBody": 72, // Body text wrapping column
+    "includeBody": true, // Include descriptive body
+    "includeFooter": true // Include footer information
   },
   "debug": {
-    "enabled": false, // Enable debug logging
-    "logLevel": "INFO" // Log level (DEBUG, INFO, WARN, ERROR)
+    "enabled": false, // Debug mode toggle
+    "logLevel": "INFO" // Logging verbosity level
   }
 }
 ```
 
+### Model Selection Strategy
+
+- **GPT-4o-mini** (default): Faster, cost-effective, ideal for most commits
+- **GPT-4o** (via `-f` flag): Higher quality for complex changes
+- **Auto-prompting**: Large diffs (>30K chars) trigger model selection prompt
+
 ### Environment Variables
 
-- `OPENAI_KEY`: Your OpenAI API key (required)
+- `OPENAI_KEY`: Alternative to saved configuration (optional)
 
-## Examples
+## 🔄 Interactive Workflow
 
-### Basic Commit
+1. **Analysis Phase**:
 
-```bash
-# Stage changes and generate commit message
-git add .
-aico
+   - Detects unstaged changes and prompts for staging
+   - Analyzes git diff and extracts meaningful patterns
+   - Considers branch context and recent commit history
 
-# Generate commit message with context
-aico -c
-```
+2. **Generation Phase**:
 
-### Branch Name Generation
+   - Processes diff through intelligent filtering
+   - Sends optimized context to OpenAI API
+   - Generates conventional commit message
 
-```bash
-# Generate a branch name for new feature
-aico -b -c
-# Enter context when prompted: "Add support for GitHub Actions integration"
-# Result: feat/add-github-actions-integration
-```
+3. **Review Phase**:
 
-### Advanced Usage
+   - Displays generated message with syntax highlighting
+   - Offers actions: Accept, Edit, Regenerate, or Cancel
+   - Handles user modifications and re-generation
 
-```bash
-# Use full GPT-4o model for important commits
-aico -f
+4. **Commit Phase**:
+   - Executes git commit with final message
+   - Provides confirmation and next steps
 
-# Generate merge commit message
-aico --merge
+## 📝 Generated Commit Format
 
-# Skip auto-staging
-aico --no-auto-stage
-```
-
-## Commit Message Format
-
-The generated commit messages follow the Conventional Commits format:
+AICO generates commits following the Conventional Commits specification:
 
 ```
 <type>(<scope>): <description>
 
-[optional body]
+- <change description 1>
+- <change description 2>
+- <change description 3>
 
 [optional footer]
 ```
 
-Types:
+**Commit Types**:
 
-- `feat`: New features
-- `fix`: Bug fixes
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, etc.)
-- `refactor`: Code refactoring
-- `test`: Adding or modifying tests
-- `chore`: Maintenance tasks
+- `feat`: New features or functionality
+- `fix`: Bug fixes (explicitly visible in diff)
+- `docs`: Documentation updates
+- `style`: Code formatting and style changes
+- `refactor`: Code restructuring without behavior change
+- `test`: Test additions or modifications
+- `chore`: Maintenance tasks, dependencies, configuration
+- `build`: Build system or dependency changes
+- `ci`: CI/CD pipeline modifications
+- `revert`: Reverting previous commits
 
-## Interactive Workflow
+## 🌿 Branch Name Generation
 
-1. Stage your changes using `git add`
-2. Run `aico`
-3. Optionally provide context to guide the AI
-4. Review the generated commit message
-5. Choose an action:
-   - Accept and commit
-   - Edit message
-   - Regenerate message
-   - Cancel
+Generate semantic branch names from natural language descriptions:
 
-## Contributing
+```bash
+aico -b -c
+# Input: "Add user authentication with JWT tokens"
+# Output: feat/add-user-authentication-jwt-tokens
+```
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+Branch naming follows the pattern: `<type>/<kebab-case-description>`
 
-## Code of Conduct
+## 🔧 Advanced Usage
 
-Please note that this project is released with a [Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+### Development Workflow Integration
 
-## License
+```bash
+# High-quality commits for important features
+git add .
+aico -f -c
+
+# Quick commits during development
+git add .
+aico
+
+# Merge commit handling
+git merge feature-branch
+aico --merge
+
+# Branch creation workflow
+aico -b -c
+git checkout -b $(aico -b -c --output-only)
+```
+
+### Large Diff Handling
+
+For large changes (>30K characters), AICO will:
+
+1. Analyze diff complexity and size
+2. Prompt for model selection (GPT-4o vs GPT-4o-mini)
+3. Suggest breaking into smaller commits if needed
+4. Provide fallback strategies for processing
+
+### Debug Mode
+
+Enable detailed logging for troubleshooting:
+
+```bash
+aico -d  # Debug mode with verbose output
+```
+
+Debug output includes:
+
+- Git diff analysis results
+- OpenAI API request/response details
+- Configuration loading steps
+- Processing time metrics
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for:
+
+- Development setup instructions
+- Code style guidelines
+- Testing requirements
+- Pull request process
+
+## 📋 Development
+
+### Local Development Setup
+
+```bash
+# Clone repository
+git clone https://github.com/EthanDM/aico.git
+cd aico
+
+# Install dependencies
+npm install
+
+# Build in watch mode
+npm run watch
+
+# Test locally
+npm run start -- --help
+```
+
+### Available Scripts
+
+- `npm run build`: Compile TypeScript to JavaScript
+- `npm run watch`: Build in watch mode for development
+- `npm run start`: Run the CLI locally
+- `npm run test`: Run test suite (Jest)
+- `npm run lint`: Run ESLint for code quality
+- `npm run prepare`: Pre-commit build hook
+
+### Technology Stack
+
+- **TypeScript**: Type-safe development
+- **Commander.js**: CLI framework and argument parsing
+- **Inquirer.js**: Interactive command-line interfaces
+- **OpenAI SDK**: GPT model integration
+- **simple-git**: Git operations wrapper
+- **Zod**: Runtime type validation
+- **Chalk**: Terminal color styling
+- **Figlet**: ASCII art banners
+
+## 📄 License
 
 MIT © [Ethan Millstein](LICENSE)
+
+## 🆘 Support
+
+- 📋 [Issues](https://github.com/EthanDM/aico/issues): Bug reports and feature requests
+- 💬 [Discussions](https://github.com/EthanDM/aico/discussions): Questions and community support
+- 📖 [Wiki](https://github.com/EthanDM/aico/wiki): Extended documentation
+
+---
+
+_Built with ❤️ for developers who care about clean commit history_
