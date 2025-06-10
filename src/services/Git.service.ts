@@ -65,38 +65,14 @@ class GitService {
       return []
     }
 
-    const log = await this.git.log([
-      `-${count}`,
-      '--pretty=format:%h|%ar|%B|%d',
-      '--date=relative',
-    ])
+    const log = await this.git.log([`-${count}`])
 
     return log.all.map((entry) => {
-      const parts = entry.hash.split('|')
-      if (parts.length < 3) {
-        return {
-          hash: parts[0] || '',
-          date: parts[1] || '',
-          message: '',
-          refs: undefined,
-        }
-      }
-
-      const [hash, date, ...rest] = parts
-      const message = rest.slice(0, -1).join('|').trim()
-      const refs = rest[rest.length - 1]
-
-      const cleanMessage = message
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line)
-        .join('\n')
-
       return {
-        hash: hash.trim(),
-        date: date.trim(),
-        message: cleanMessage,
-        refs: refs && refs !== ' ' ? refs.trim() : undefined,
+        hash: entry.hash.substring(0, 7), // Short hash like git log --oneline
+        date: entry.date,
+        message: entry.message,
+        refs: entry.refs || undefined,
       }
     })
   }

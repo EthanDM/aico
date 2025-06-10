@@ -253,12 +253,61 @@ export class OpenAIService {
     }
 
     // Add recent commits context with clear purpose
-    const recentCommits = await GitService.getRecentCommits(3) // Reduced from 5 to 3
+    const recentCommits = await GitService.getRecentCommits(5) // Get 5 to filter from
+
+    // Debug logging to understand what commits we're getting
     if (recentCommits.length > 0) {
-      parts.push('\nRECENT COMMITS (for consistency reference):')
-      recentCommits.forEach((commit) => {
+      LoggerService.debug('\n🔍 Recent commits retrieved:')
+      recentCommits.forEach((commit, index) => {
+        const firstLine = commit.message.split('\n')[0]
+        LoggerService.debug(`${index + 1}. ${firstLine}`)
+      })
+    }
+
+    // Filter for good examples (conventional commits only)
+    const goodExamples = recentCommits
+      .filter((commit) => {
+        const firstLine = commit.message.split('\n')[0]
+        // More lenient pattern - allows optional scope and various formats
+        const strictMatch =
+          /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?: .+/.test(
+            firstLine
+          )
+        const lenientMatch =
+          /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)[:\s].+/.test(
+            firstLine
+          )
+
+        const matches = strictMatch || lenientMatch
+
+        // Debug each commit's match status
+        LoggerService.debug(
+          `Checking: "${firstLine}" -> ${matches ? 'MATCH' : 'NO MATCH'}`
+        )
+
+        return matches
+      })
+      .slice(0, 3) // Take best 3 examples
+
+    LoggerService.debug(`\n📊 Filtered to ${goodExamples.length} good examples`)
+
+    if (goodExamples.length > 0) {
+      parts.push('\nRECENT COMMITS (for style consistency only):')
+      goodExamples.forEach((commit) => {
         const shortMessage = commit.message.split('\n')[0] // Only first line
         parts.push(`• ${shortMessage}`)
+      })
+      parts.push(
+        'NOTE: Use these ONLY for style/format reference, not content guidance'
+      )
+    } else if (recentCommits.length > 0) {
+      // If no good examples, show a note about recent commits in debug
+      LoggerService.debug(
+        '\n⚠️  No conventional commits found, showing all recent commits for reference:'
+      )
+      recentCommits.forEach((commit, index) => {
+        const firstLine = commit.message.split('\n')[0]
+        LoggerService.debug(`${index + 1}. ${firstLine}`)
       })
     }
 
