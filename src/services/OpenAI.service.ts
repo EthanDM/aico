@@ -8,7 +8,7 @@ import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 type OpenAIConfig = Config['openai']
 
 interface OpenAIOptions {
-  context?: boolean
+  context?: boolean | string
   noAutoStage?: boolean
   merge?: boolean
 }

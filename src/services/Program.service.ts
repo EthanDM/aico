@@ -12,7 +12,7 @@ export interface ProgramOptions {
   /**
    * Whether to prompt for user context before generating commit message
    */
-  context?: boolean
+  context?: boolean | string
   /**
    * Whether to automatically stage changes (defaults to true)
    */
@@ -106,8 +106,10 @@ class ProgramService {
         chalk.yellow('use full GPT-4o model for this commit')
       )
       .option(
-        '-c, --context',
-        chalk.yellow('prompt for user context before generating commit message')
+        '-c, --context [context]',
+        chalk.yellow(
+          'provide context for AI guidance (interactive if no value given)'
+        )
       )
       .option(
         '--no-auto-stage',
@@ -123,9 +125,16 @@ class ProgramService {
         '-b, --branch',
         chalk.yellow('generate a branch name instead of a commit message')
       )
+      .allowUnknownOption()
       .parse(process.argv)
 
     const options = this.program.opts<ProgramOptions>()
+    const positionalArgs = this.program.args
+
+    // Handle positional arguments as context (if no context flag provided)
+    if (positionalArgs.length > 0 && !options.context) {
+      options.context = positionalArgs.join(' ')
+    }
 
     // Handle setting API key if requested
     if (options.setApiKey) {

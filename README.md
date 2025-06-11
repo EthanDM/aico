@@ -86,24 +86,65 @@ git add .
 # Generate and apply commit message
 aico
 
-# Generate with user context
+# Generate with interactive context prompt
 aico -c
 
-# Generate branch name
-aico -b -c
+# Generate with inline context
+aico -c "fix authentication bug with JWT validation"
+
+# Generate with positional context (no flags needed)
+aico "optimize database queries for better performance"
+
+# Generate branch name with context
+aico -b -c "add user profile feature"
 ```
+
+### Context Usage Patterns
+
+AICO supports three ways to provide context for better commit message generation:
+
+#### 1. Interactive Context (Traditional)
+
+```bash
+aico -c
+# Prompts: "Add context to help guide the AI:"
+# Best for: When you want to see the diff first, then decide what context to add
+```
+
+#### 2. Inline Context (Fast)
+
+```bash
+aico -c "fix memory leak in event handlers"
+aico --context "refactor authentication to use OAuth2"
+# Best for: When you know exactly what context you want to provide upfront
+```
+
+#### 3. Positional Context (Fastest)
+
+```bash
+aico "implement user preferences dashboard"
+aico "resolve merge conflicts in user service"
+# Best for: Ultimate speed - no flags needed when you have context
+# Note: If you use quotes, shell treats it as one argument
+```
+
+**Context Tips:**
+
+- Keep context concise but descriptive (under 100 characters works best)
+- Focus on the "why" rather than the "what" (the diff shows the "what")
+- Examples: "fix production bug", "improve performance", "add new feature"
 
 ## 🛠️ Configuration
 
 ### Command Line Options
 
 ```bash
-aico [options]
+aico [options] [context]
 
 Options:
   -d, --debug              Enable debug logging with detailed output
   -f, --full               Use GPT-4o model instead of default GPT-4o-mini
-  -c, --context            Prompt for user context before generation
+  -c, --context [context]  Provide context for AI guidance (interactive if no value given)
   --no-auto-stage          Disable automatic staging of changes
   --merge                  Generate merge commit message
   --set-default-model      Set default model (gpt-4o | gpt-4o-mini)
@@ -111,6 +152,9 @@ Options:
   -b, --branch            Generate branch name instead of commit message
   -h, --help              Display help information
   -v, --version           Show version number
+
+Arguments:
+  context                  Context to guide AI generation (alternative to -c flag)
 ```
 
 ### Configuration File

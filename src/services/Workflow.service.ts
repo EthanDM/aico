@@ -7,7 +7,7 @@ import LoggerService from './Logger.service'
 import AppLogService from './AppLog.service'
 
 interface WorkflowOptions {
-  context?: boolean
+  context?: boolean | string
   noAutoStage?: boolean
   merge?: boolean
   branch?: boolean
@@ -20,6 +20,7 @@ class WorkflowService {
   private openai
   private options: WorkflowOptions
   private config: Config
+  private providedContext?: string
 
   constructor(config: Config, options: WorkflowOptions = {}) {
     this.config = config
@@ -29,6 +30,13 @@ class WorkflowService {
       merge: options.merge || false,
       branch: options.branch || false,
     }
+
+    // Extract context string if provided
+    if (typeof options.context === 'string') {
+      this.providedContext = options.context
+      this.options.context = true // Enable context mode
+    }
+
     this.openai = createOpenAIService(config.openai, this.options)
   }
 
@@ -41,6 +49,11 @@ class WorkflowService {
   private async promptForContext(
     required: boolean = false
   ): Promise<string | undefined> {
+    // If context was provided via command line, use it
+    if (this.providedContext) {
+      return this.providedContext
+    }
+
     // Only prompt for context if the context flag is set or it's required
     if (!this.options.context && !required) {
       return undefined
@@ -170,8 +183,12 @@ class WorkflowService {
    * @returns The generated branch name
    */
   public async generateBranchName(currentContext?: string): Promise<string> {
-    // Get context for branch name
-    const context = currentContext || (await this.promptForContext(true))
+    // Get context for branch name - use provided context, passed context, or prompt for it
+    let context = currentContext || this.providedContext
+    if (!context) {
+      context = await this.promptForContext(true)
+    }
+
     if (!context) {
       throw new Error('Context is required for branch name generation')
     }
