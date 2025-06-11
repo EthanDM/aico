@@ -122,14 +122,21 @@ aico --context "refactor authentication to use OAuth2"
 #### 3. Positional Context (Fastest)
 
 ```bash
+# With quotes (recommended for complex context)
 aico "implement user preferences dashboard"
 aico "resolve merge conflicts in user service"
+
+# Without quotes (works great for simple context)
+aico fix authentication bug
+aico optimize database queries
+aico add new feature
+
 # Best for: Ultimate speed - no flags needed when you have context
-# Note: If you use quotes, shell treats it as one argument
 ```
 
 **Context Tips:**
 
+- **Quotes are optional!** Use them when your context contains special characters or you want to be explicit
 - Keep context concise but descriptive (under 100 characters works best)
 - Focus on the "why" rather than the "what" (the diff shows the "what")
 - Examples: "fix production bug", "improve performance", "add new feature"
