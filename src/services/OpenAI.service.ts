@@ -68,6 +68,27 @@ const TASTE_PHRASE_REWRITES: Array<[RegExp, string]> = [
   [/\bupdate\s+(.+?)\s+handling\b/gi, 'refine $1'],
 ]
 
+const PREFERRED_VERBS = [
+  'refine',
+  'tighten',
+  'harden',
+  'clarify',
+  'standardize',
+  'rename',
+  'remove',
+  'support',
+  'detect',
+  'prevent',
+]
+
+const DISCOURAGED_VERBS = [
+  'implement',
+  'adjust',
+  'handle',
+  'process',
+  'manage',
+]
+
 interface OpenAIOptions {
   context?: boolean | string
   noAutoStage?: boolean
@@ -749,13 +770,20 @@ export class OpenAIService {
 
   private refineDescriptionWording(
     description: string,
-    context: { docsTouched?: boolean; internalChange?: boolean }
+    context: {
+      docsTouched?: boolean
+      internalChange?: boolean
+      qualityTuning?: boolean
+    }
   ): string {
     let refined = description
 
     for (const [pattern, replacement] of TASTE_PHRASE_REWRITES) {
       refined = refined.replace(pattern, replacement)
     }
+
+    refined = this.normalizeVerbChoice(refined, context)
+    refined = this.tightenNouns(refined)
 
     for (const [pattern, replacement] of TASTE_VERB_REWRITES) {
       refined = refined.replace(pattern, replacement)
@@ -775,7 +803,58 @@ export class OpenAIService {
       refined = refined.replace(/\blogic\b/gi, 'validation')
     }
 
+    return this.finalizeDescription(refined)
+  }
+
+  private normalizeVerbChoice(
+    description: string,
+    context: { docsTouched?: boolean; internalChange?: boolean; qualityTuning?: boolean }
+  ): string {
+    let refined = description
+    if (context.qualityTuning || context.internalChange) {
+      refined = refined.replace(/\bimplement\b/gi, 'refine')
+      refined = refined.replace(/\badd\b/gi, 'refine')
+    }
+    refined = refined.replace(/\badjust\b/gi, 'refine')
+    refined = refined.replace(/\bimprove\b/gi, 'tighten')
+    return refined
+  }
+
+  private tightenNouns(description: string): string {
+    let refined = description
+    refined = refined.replace(/\bdescription refinement\b/gi, 'description wording')
+    refined = refined.replace(/\bcommit messages\b/gi, 'commit subjects')
+    refined = refined.replace(/\bdocumentation changes?\b/gi, 'docs change detection')
+    refined = refined.replace(/\bvalidation process\b/gi, 'validation')
+    refined = refined.replace(/\bconfiguration handling\b/gi, 'config handling')
+    refined = refined.replace(/\bbehavior\b/gi, '')
+    return refined
+  }
+
+  private finalizeDescription(description: string): string {
+    let refined = description.replace(/\s+/g, ' ').trim()
+    refined = refined.replace(/[-:,.]+$/, '').trim()
+    refined = this.trimTrailingStopWord(refined)
     return refined.replace(/\s+/g, ' ').trim()
+  }
+
+  private isQualityTuningChange(diff: ProcessedDiff): boolean {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    const touched = paths.some((path) =>
+      [
+        'src/services/OpenAI.service.ts',
+        'src/constants/openai.constants.ts',
+        'src/processors/Diff.processor.ts',
+        'src/services/Git.service.ts',
+      ].includes(path)
+    )
+    if (!touched) {
+      return false
+    }
+    const snippets = diff.signals?.patchSnippets?.join('\n') || ''
+    return /(validateCommitMessage|repairSubject|truncateSubject|scopeRules|templates|prompt|banned|vague|refineDescription)/.test(
+      snippets
+    )
   }
 
   private buildBehaviorTemplateSubject(diff: ProcessedDiff): string | undefined {
@@ -838,7 +917,7 @@ export class OpenAIService {
         return template
       }
       if (this.isDocsTouched(diff) && !this.isDocsOnlyChange(diff)) {
-        description = 'refine docs detection for commit messages'
+        description = 'refine docs change detection for commit subjects'
       } else {
         description = 'align commit flow'
       }
@@ -847,6 +926,7 @@ export class OpenAIService {
     description = this.refineDescriptionWording(description, {
       docsTouched: this.isDocsTouched(diff),
       internalChange: this.isInternalToolingChange(diff),
+      qualityTuning: this.isQualityTuningChange(diff),
     })
 
     const prefix = `${type}${scope}: `
