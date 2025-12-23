@@ -1002,15 +1002,15 @@ export class OpenAIService {
 
       const messages: ChatCompletionMessageParam[] = isRetry
         ? [
-            baseMessages[0],
-            {
-              role: 'user',
-              content:
-                `${prompt}\nPrevious output:\n${lastMessage?.title ?? ''}\n` +
-                (lastMessage?.body ? `${lastMessage.body}\n` : '') +
-                `Violations:\n- ${lastErrors.join('\n- ')}\nReturn only the corrected commit message.`,
-            } as ChatCompletionMessageParam,
-          ]
+          baseMessages[0],
+          {
+            role: 'user',
+            content:
+              `${prompt}\nPrevious output:\n${lastMessage?.title ?? ''}\n` +
+              (lastMessage?.body ? `${lastMessage.body}\n` : '') +
+              `Violations:\n- ${lastErrors.join('\n- ')}\nReturn only the corrected commit message.`,
+          } as ChatCompletionMessageParam,
+        ]
         : baseMessages
 
       LoggerService.debug('\n🔍 Building OpenAI Request:')
@@ -1150,6 +1150,7 @@ export class OpenAIService {
     context: string,
     diff?: ProcessedDiff
   ): Promise<string> {
+    const prefixHint = this.inferBranchPrefix(context)
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -1170,6 +1171,7 @@ Follow these strict branch naming rules:
 - Remove unnecessary context words (e.g. 'frontend', 'backend', 'server', 'client')
 - Use clear, meaningful terms
 - No special characters except hyphens and forward slashes
+- Prefer the provided prefix hint if available.
 
 IMPORTANT:
 1. Respond ONLY with the branch name, nothing else
@@ -1191,7 +1193,7 @@ Examples of bad branch names:
       },
       {
         role: 'user',
-        content: await this.buildBranchPrompt(context, diff),
+        content: await this.buildBranchPrompt(context, diff, prefixHint),
       },
     ]
 
@@ -1234,16 +1236,16 @@ Examples of bad branch names:
         'style/',
         'docs/',
       ]
-      if (!validPrefixes.some((prefix) => branchName.startsWith(prefix))) {
-        // Default to chore/ if no valid prefix is present
-        return 'chore/' + branchName
+      let normalizedBranch = branchName
+      if (!validPrefixes.some((prefix) => normalizedBranch.startsWith(prefix))) {
+        normalizedBranch = prefixHint + normalizedBranch.replace(/^\/+/, '')
       }
 
       // Enforce maximum length by truncating if necessary
       const maxLength = 40
-      if (branchName.length > maxLength) {
-        const prefix = branchName.split('/')[0] + '/'
-        const name = branchName.slice(prefix.length)
+      if (normalizedBranch.length > maxLength) {
+        const prefix = normalizedBranch.split('/')[0] + '/'
+        const name = normalizedBranch.slice(prefix.length)
         const truncatedName = name.split('-').reduce((acc, part) => {
           if (
             (acc + (acc ? '-' : '') + part).length <=
@@ -1256,7 +1258,7 @@ Examples of bad branch names:
         return prefix + truncatedName
       }
 
-      return branchName
+      return normalizedBranch
     } catch (error) {
       LoggerService.error('Failed to generate branch name')
       throw error
@@ -1272,24 +1274,68 @@ Examples of bad branch names:
    */
   private async buildBranchPrompt(
     context: string,
-    diff?: ProcessedDiff
+    diff: ProcessedDiff | undefined,
+    prefixHint: string
   ): Promise<string> {
     const parts = ['Generate a branch name based on the following context:']
     parts.push(`\nContext: ${context}`)
+    parts.push(`\nPrefix hint: ${prefixHint}`)
 
     if (diff) {
       parts.push('\nChanges summary:')
-      if (diff.stats.wasSummarized) {
-        parts.push(diff.summary)
-        parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
-        parts.push(`Additions: ${diff.stats.additions}`)
-        parts.push(`Deletions: ${diff.stats.deletions}`)
-      } else {
-        parts.push(diff.summary)
-      }
+      parts.push(this.buildBranchDiffSummary(diff))
     }
 
     return parts.join('\n')
+  }
+
+  private buildBranchDiffSummary(diff: ProcessedDiff): string {
+    const nameStatus = diff.signals?.nameStatus || []
+    const numStat = diff.signals?.numStat || []
+    const topFiles = diff.signals?.topFiles || []
+
+    const parts: string[] = []
+
+    if (nameStatus.length > 0) {
+      parts.push('Name-status:')
+      nameStatus.forEach((entry) => {
+        if (entry.status === 'R' || entry.status === 'C') {
+          const oldPath = entry.oldPath || 'unknown'
+          parts.push(`- ${entry.status} ${oldPath} -> ${entry.path}`)
+        } else {
+          parts.push(`- ${entry.status} ${entry.path}`)
+        }
+      })
+    }
+
+    parts.push('Stats:')
+    parts.push(`- files: ${diff.stats.filesChanged}`)
+    parts.push(`- insertions: ${diff.stats.additions}`)
+    parts.push(`- deletions: ${diff.stats.deletions}`)
+
+    if (topFiles.length > 0) {
+      parts.push('Top files:')
+      topFiles.forEach((path) => {
+        const stats = numStat.find((entry) => entry.path === path)
+        if (stats) {
+          parts.push(`- ${path} (+${stats.insertions}/-${stats.deletions})`)
+        } else {
+          parts.push(`- ${path}`)
+        }
+      })
+    }
+
+    return parts.join('\n')
+  }
+
+  private inferBranchPrefix(context: string): string {
+    const text = context.toLowerCase()
+    if (/(fix|bug|crash|broken|regression)/.test(text)) return 'fix/'
+    if (/(refactor|cleanup|rename|restructure)/.test(text))
+      return 'refactor/'
+    if (/(docs|readme|changelog)/.test(text)) return 'docs/'
+    if (/(style|format|lint|eslint|prettier)/.test(text)) return 'style/'
+    return 'feat/'
   }
 }
 
