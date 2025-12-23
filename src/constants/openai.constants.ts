@@ -15,7 +15,7 @@ Output contract:
 
 Hard prohibitions:
 - Never list files or directories.
-- Never use filler words: update, enhance, improve, misc, changes.
+- Never use filler words: update, enhance, improve, misc.
 - Do not mention logging or refactors unless behavior changes.
 - Use feat only for user-facing product features.
 - For internal code quality, architecture, tooling, prompt/validation/diff processing, use refactor (or chore for pure maintenance).
