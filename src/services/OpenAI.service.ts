@@ -54,6 +54,20 @@ const TRAILING_STOP_WORDS = [
   'by',
 ]
 
+const TASTE_VERB_REWRITES: Array<[RegExp, string]> = [
+  [/\badjust\b/gi, 'refine'],
+  [/\btweak\b/gi, 'refine'],
+  [/\bimprove\b/gi, 'tighten'],
+]
+
+const TASTE_PHRASE_REWRITES: Array<[RegExp, string]> = [
+  [/\badjust\s+(.+?)\s+behavior\b/gi, 'refine $1'],
+  [/\badjust\s+(.+?)\s+parameters\b/gi, 'refine $1'],
+  [/\badd\s+(.+?)\s+logic\b/gi, 'add $1'],
+  [/\badd\s+(.+?)\s+handling\b/gi, 'support $1'],
+  [/\bupdate\s+(.+?)\s+handling\b/gi, 'refine $1'],
+]
+
 interface OpenAIOptions {
   context?: boolean | string
   noAutoStage?: boolean
@@ -733,6 +747,37 @@ export class OpenAIService {
     return false
   }
 
+  private refineDescriptionWording(
+    description: string,
+    context: { docsTouched?: boolean; internalChange?: boolean }
+  ): string {
+    let refined = description
+
+    for (const [pattern, replacement] of TASTE_PHRASE_REWRITES) {
+      refined = refined.replace(pattern, replacement)
+    }
+
+    for (const [pattern, replacement] of TASTE_VERB_REWRITES) {
+      refined = refined.replace(pattern, replacement)
+    }
+
+    refined = refined.replace(/\bhandling\b/gi, 'support')
+    refined = refined.replace(/\bprocess\b/gi, '')
+    refined = refined.replace(/\bparameters?\b/gi, '')
+    refined = refined.replace(/\s+/g, ' ').trim()
+
+    if (context.docsTouched) {
+      refined = refined.replace(/\bdocumentation changes?\b/gi, 'docs changes')
+      refined = refined.replace(/\bdocs changes?\b/gi, 'docs change detection')
+    }
+
+    if (context.internalChange) {
+      refined = refined.replace(/\blogic\b/gi, 'validation')
+    }
+
+    return refined.replace(/\s+/g, ' ').trim()
+  }
+
   private buildBehaviorTemplateSubject(diff: ProcessedDiff): string | undefined {
     if (!this.commitConfig.enableBehaviorTemplates) {
       return undefined
@@ -793,11 +838,16 @@ export class OpenAIService {
         return template
       }
       if (this.isDocsTouched(diff) && !this.isDocsOnlyChange(diff)) {
-        description = 'improve docs detection for commit messages'
+        description = 'refine docs detection for commit messages'
       } else {
         description = 'align commit flow'
       }
     }
+
+    description = this.refineDescriptionWording(description, {
+      docsTouched: this.isDocsTouched(diff),
+      internalChange: this.isInternalToolingChange(diff),
+    })
 
     const prefix = `${type}${scope}: `
     const renameDescription = this.buildRenameDescription(
