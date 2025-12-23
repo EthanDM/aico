@@ -29,8 +29,13 @@ const BANNED_SUBJECT_WORDS = [
   'improve',
   'improved',
   'misc',
-  'change',
   'changes',
+]
+
+const VAGUE_SUBJECT_PATTERNS = [
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: changes$/i,
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: minor changes$/i,
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: various changes$/i,
 ]
 
 interface OpenAIOptions {
@@ -216,6 +221,36 @@ export class OpenAIService {
     )
   }
 
+  private isInternalToolingChange(diff: ProcessedDiff): boolean {
+    const paths = diff.signals?.topFiles?.length
+      ? diff.signals.topFiles
+      : diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    if (paths.length === 0) {
+      return false
+    }
+
+    const internalPrefixes = [
+      'src/services/',
+      'src/processors/',
+      'src/types/',
+      'src/constants/',
+    ]
+    const userFacingHints = ['src/cli.ts', 'src/cli/']
+
+    const hasUserFacingHint = paths.some((path) =>
+      userFacingHints.some((hint) => path.startsWith(hint))
+    )
+    if (hasUserFacingHint) {
+      return false
+    }
+
+    const internalCount = paths.filter((path) =>
+      internalPrefixes.some((prefix) => path.startsWith(prefix))
+    ).length
+
+    return internalCount / paths.length >= 0.5
+  }
+
   private containsFilePathOrExtension(text: string): boolean {
     const hasPath =
       /[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/.test(text) ||
@@ -230,6 +265,7 @@ export class OpenAIService {
       maxTitleLength: number
       includeBodyMode: CommitConfig['includeBody']
       includeBodyAllowed: boolean
+      internalChange?: boolean
     }
   ): { valid: boolean; errors: string[] } {
     const errors: string[] = []
@@ -255,6 +291,13 @@ export class OpenAIService {
     )
     if (bannedSubjectPattern.test(title)) {
       errors.push('Subject contains banned filler words')
+    }
+    if (VAGUE_SUBJECT_PATTERNS.some((pattern) => pattern.test(title))) {
+      errors.push('Subject is too vague')
+    }
+
+    if (options.internalChange && /^feat(\(|:)/.test(title)) {
+      errors.push('Use refactor/chore for internal tooling changes (not feat)')
     }
 
     if (message.body) {
@@ -455,6 +498,10 @@ export class OpenAIService {
       parts.push(`Scope hint: ${scopeHint}`)
     }
 
+    if (this.isInternalToolingChange(diff)) {
+      parts.push('Type hint: refactor (internal tooling change)')
+    }
+
     if (nameStatus.length > 0) {
       parts.push('Changes (name-status):')
       nameStatus.forEach((entry) => {
@@ -542,6 +589,9 @@ export class OpenAIService {
       'i'
     )
     if (bannedSubjectPattern.test(subject)) return false
+    if (VAGUE_SUBJECT_PATTERNS.some((pattern) => pattern.test(subject))) {
+      return false
+    }
     return true
   }
 
@@ -847,6 +897,7 @@ export class OpenAIService {
       const parsedMessage = this.parseCommitMessage(rawContent)
       lastMessage = parsedMessage
 
+      const internalChange = this.isInternalToolingChange(diff)
       const truncatedSubjectOnly: CommitMessage = {
         title: this.truncateSubjectToMax(
           parsedMessage.title,
@@ -860,6 +911,7 @@ export class OpenAIService {
           maxTitleLength: this.commitConfig.maxTitleLength,
           includeBodyMode: this.commitConfig.includeBody,
           includeBodyAllowed,
+          internalChange,
         }
       )
       if (truncatedValidation.valid) {
@@ -870,6 +922,7 @@ export class OpenAIService {
         maxTitleLength: this.commitConfig.maxTitleLength,
         includeBodyMode: this.commitConfig.includeBody,
         includeBodyAllowed,
+        internalChange,
       })
 
       if (validation.valid) {
@@ -884,6 +937,7 @@ export class OpenAIService {
         maxTitleLength: this.commitConfig.maxTitleLength,
         includeBodyMode: this.commitConfig.includeBody,
         includeBodyAllowed,
+        internalChange,
       })
       if (subjectOnlyValidation.valid) {
         return subjectOnly
@@ -910,6 +964,7 @@ export class OpenAIService {
             maxTitleLength: this.commitConfig.maxTitleLength,
             includeBodyMode: this.commitConfig.includeBody,
             includeBodyAllowed,
+            internalChange,
           }
         )
         if (onlyTooLongValidation.valid) {

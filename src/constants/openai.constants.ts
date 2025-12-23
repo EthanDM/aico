@@ -17,4 +17,10 @@ Hard prohibitions:
 - Never list files or directories.
 - Never use filler words: update, enhance, improve, misc, changes.
 - Do not mention logging or refactors unless behavior changes.
+- Use feat only for user-facing product features.
+- For internal code quality, architecture, tooling, prompt/validation/diff processing, use refactor (or chore for pure maintenance).
+
+Examples:
+refactor(services): use structured diff signals for commit generation
+chore(config): migrate includeBody setting to enum
 `
