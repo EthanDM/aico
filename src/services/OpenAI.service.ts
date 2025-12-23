@@ -20,6 +20,9 @@ const PATH_SCOPE_MAP = [
 const SUBJECT_PATTERN =
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: .+$/
 
+const SUBJECT_PARSE_PATTERN =
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: (.+)$/
+
 const BANNED_SUBJECT_WORDS = [
   'update',
   'updates',
@@ -36,6 +39,28 @@ const VAGUE_SUBJECT_PATTERNS = [
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: changes$/i,
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: minor changes$/i,
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: various changes$/i,
+]
+
+const VAGUE_DESCRIPTION_WORDS = [
+  'handling',
+  'logic',
+  'process',
+  'stuff',
+  'various',
+]
+
+const TRAILING_STOP_WORDS = [
+  'and',
+  'or',
+  'with',
+  'for',
+  'to',
+  'in',
+  'on',
+  'at',
+  'from',
+  'into',
+  'by',
 ]
 
 interface OpenAIOptions {
@@ -563,9 +588,10 @@ export class OpenAIService {
 
   private inferScopeFromPaths(paths: string[]): string | undefined {
     const counts = new Map<string, number>()
+    const scopeRules = this.getScopeRules()
 
     for (const path of paths) {
-      for (const entry of PATH_SCOPE_MAP) {
+      for (const entry of scopeRules) {
         if (entry.match.test(path)) {
           counts.set(entry.scope, (counts.get(entry.scope) || 0) + 1)
         }
@@ -574,6 +600,35 @@ export class OpenAIService {
 
     const best = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]
     return best?.[0]
+  }
+
+  private getScopeRules(): { scope: string; match: RegExp }[] {
+    const fallbackRules = [
+      { scope: 'translations', match: /\/translations\// },
+      { scope: 'services', match: /\/services\// },
+      { scope: 'types', match: /\/types\// },
+      { scope: 'constants', match: /\/constants\// },
+    ]
+
+    const rawRules = this.commitConfig.scopeRules || []
+    if (rawRules.length === 0) {
+      return fallbackRules
+    }
+
+    const parsed = rawRules
+      .map((rule) => {
+        try {
+          return { scope: rule.scope, match: new RegExp(rule.match) }
+        } catch {
+          return undefined
+        }
+      })
+      .filter(Boolean) as { scope: string; match: RegExp }[]
+
+    if (parsed.length === 0) {
+      return fallbackRules
+    }
+    return parsed
   }
 
   private normalizeSubject(candidate: string): string {
@@ -632,13 +687,61 @@ export class OpenAIService {
     return text.replace(bannedSubjectPattern, '')
   }
 
+  private isVagueDescription(description: string): boolean {
+    const tokens = description
+      .split(/\s+/)
+      .map((token) => token.toLowerCase())
+      .filter(Boolean)
+    if (tokens.length === 0) return true
+    if (tokens.every((token) => VAGUE_DESCRIPTION_WORDS.includes(token))) {
+      return true
+    }
+    if (tokens.length <= 3) {
+      return tokens.some((token) => VAGUE_DESCRIPTION_WORDS.includes(token))
+    }
+    return false
+  }
+
+  private buildBehaviorTemplateSubject(diff: ProcessedDiff): string | undefined {
+    const paths = diff.signals?.topFiles?.length
+      ? diff.signals.topFiles
+      : diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    const snippets = diff.signals?.patchSnippets?.join('\n') || ''
+
+    const translationsOnly =
+      paths.length > 0 &&
+      paths.every((path) => /^src\/translations\//.test(path))
+    if (translationsOnly) {
+      return 'feat(translations): add integration browse message'
+    }
+
+    if (this.commitConfig.enableBrowseModeTemplate) {
+      const browseModeHints =
+        /Browse available integrations|Select leads first/i.test(snippets) ||
+        /connections\.length\s*===\s*0|rawConnections\.length\s*===\s*0/.test(
+          snippets
+        )
+      if (browseModeHints) {
+        return 'feat(integrations): support browse mode when no leads are selected'
+      }
+    }
+
+    const loggingSwap =
+      /console\./.test(snippets) && /AppLogger|LoggerService/.test(snippets)
+    if (loggingSwap && paths.length > 0 && paths.length <= 3) {
+      return 'chore(logging): standardize logging'
+    }
+
+    return undefined
+  }
+
   private repairSubject(
     diff: ProcessedDiff,
     candidate: string
   ): string | undefined {
     const maxLength = this.commitConfig.maxTitleLength
     const normalized = this.normalizeSubject(candidate)
-    const match = normalized.match(SUBJECT_PATTERN)
+    const match = normalized.match(SUBJECT_PARSE_PATTERN)
     if (!match) {
       return undefined
     }
@@ -658,8 +761,13 @@ export class OpenAIService {
       !description ||
       VAGUE_SUBJECT_PATTERNS.some((pattern) =>
         pattern.test(`${type}${scope}: ${description}`)
-      )
+      ) ||
+      this.isVagueDescription(description)
     ) {
+      const template = this.buildBehaviorTemplateSubject(diff)
+      if (template) {
+        return template
+      }
       description = 'align commit flow'
     }
 
@@ -677,9 +785,7 @@ export class OpenAIService {
 
   private truncateSubjectToMax(subject: string, maxLength: number): string {
     if (subject.length <= maxLength) return subject
-    const match = subject.match(
-      /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([^)]+\))?: (.+)$/
-    )
+    const match = subject.match(SUBJECT_PARSE_PATTERN)
     if (!match) {
       return subject.slice(0, maxLength).trim()
     }
@@ -696,10 +802,30 @@ export class OpenAIService {
 
     const rawSlice = description.slice(0, allowed)
     const lastSpaceIndex = rawSlice.lastIndexOf(' ')
-    const candidate =
-      lastSpaceIndex > 0 ? rawSlice.slice(0, lastSpaceIndex).trim() : rawSlice.trim()
+    let candidate =
+      lastSpaceIndex > 0
+        ? rawSlice.slice(0, lastSpaceIndex).trim()
+        : rawSlice.trim()
+    candidate = candidate.replace(/[-:,.]+$/, '').trim()
+    candidate = this.trimTrailingStopWord(candidate)
     const cleaned = candidate.replace(/[-:,.]+$/, '').trim()
+    if (!cleaned) {
+      return `${type}${scope}: align commit flow`.slice(0, maxLength).trim()
+    }
     return `${prefix}${cleaned}`.trim()
+  }
+
+  private trimTrailingStopWord(text: string): string {
+    const words = text.split(/\s+/).filter(Boolean)
+    if (words.length === 0) return text
+    while (words.length > 1) {
+      const lastWord = words[words.length - 1].toLowerCase()
+      if (!TRAILING_STOP_WORDS.includes(lastWord)) {
+        break
+      }
+      words.pop()
+    }
+    return words.join(' ')
   }
 
   private buildSafeFallbackSubject(
@@ -960,28 +1086,36 @@ export class OpenAIService {
       const rawContent = response.choices[0]?.message?.content || ''
       const content = rawContent.trim()
       const finishReason = response.choices[0]?.finish_reason
-      if (!content) {
-        if (isRetry) {
-          break
-        }
-        if (lastMessage) {
-          break
-        }
-        throw new Error('No commit message generated')
-      }
-
-      if (isRetry && finishReason !== 'stop') {
+    if (!content) {
+      if (isRetry) {
         break
       }
+      if (lastMessage) {
+        break
+      }
+      throw new Error('No commit message generated')
+    }
 
-      const parsedMessage = this.parseCommitMessage(rawContent)
-      lastMessage = parsedMessage
+    if (isRetry && finishReason !== 'stop') {
+      break
+    }
 
-      const internalChange = this.isInternalToolingChange(diff)
-      const truncatedSubjectOnly: CommitMessage = {
-        title: this.truncateSubjectToMax(
-          parsedMessage.title,
-          this.commitConfig.maxTitleLength
+    const parsedMessage = this.parseCommitMessage(rawContent)
+    lastMessage = parsedMessage
+
+    const templateSubject = this.buildBehaviorTemplateSubject(diff)
+    if (
+      templateSubject &&
+      this.isValidSubject(templateSubject, this.commitConfig.maxTitleLength)
+    ) {
+      return { title: templateSubject, body: undefined }
+    }
+
+    const internalChange = this.isInternalToolingChange(diff)
+    const truncatedSubjectOnly: CommitMessage = {
+      title: this.truncateSubjectToMax(
+        parsedMessage.title,
+        this.commitConfig.maxTitleLength
         ),
         body: undefined,
       }
@@ -1023,8 +1157,7 @@ export class OpenAIService {
         return subjectOnly
       }
 
-      const { structural } = this.splitValidationErrors(validation.errors)
-      if (structural.length === 0) {
+      if (this.containsFilePathOrExtension(parsedMessage.title)) {
         const repaired = this.repairSubject(diff, parsedMessage.title)
         if (repaired) {
           LoggerService.debug(
@@ -1032,15 +1165,26 @@ export class OpenAIService {
           )
           return { title: repaired, body: undefined }
         }
-        return {
-          title: this.buildSafeFallbackSubject(diff, parsedMessage.title),
-          body: undefined,
-        }
       }
 
-      const nonBodyErrors = validation.errors.filter(
-        (error) => !error.startsWith('Body ')
-      )
+      const { structural } = this.splitValidationErrors(validation.errors)
+    if (structural.length === 0) {
+      const repaired = this.repairSubject(diff, parsedMessage.title)
+      if (repaired) {
+        LoggerService.debug(
+          `Repaired subject locally: "${parsedMessage.title}" -> "${repaired}"`
+        )
+        return { title: repaired, body: undefined }
+      }
+      return {
+        title: this.buildSafeFallbackSubject(diff, parsedMessage.title),
+        body: undefined,
+      }
+    }
+
+    const nonBodyErrors = validation.errors.filter(
+      (error) => !error.startsWith('Body ')
+    )
       const onlyTooLong =
         nonBodyErrors.length === 1 &&
         nonBodyErrors[0]?.includes('exceeds')

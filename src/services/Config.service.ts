@@ -29,6 +29,8 @@ class ConfigService {
       wrapBody: 72,
       includeBody: 'auto',
       includeFooter: false,
+      scopeRules: [],
+      enableBrowseModeTemplate: false,
     },
     debug: {
       enabled: false,

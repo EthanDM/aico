@@ -12,7 +12,9 @@
     "maxBodyLength": 200,
     "wrapBody": 72,
     "includeBody": "auto",
-    "includeFooter": false
+    "includeFooter": false,
+    "scopeRules": [],
+    "enableBrowseModeTemplate": false
   },
   "debug": {
     "enabled": false,

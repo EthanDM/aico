@@ -19,6 +19,15 @@ export const ConfigSchema = z.object({
     wrapBody: z.number().default(72),
     includeBody: z.enum(['auto', 'never', 'always']).default('auto'),
     includeFooter: z.boolean().default(false),
+    scopeRules: z
+      .array(
+        z.object({
+          scope: z.string(),
+          match: z.string(),
+        })
+      )
+      .default([]),
+    enableBrowseModeTemplate: z.boolean().default(false),
   }),
   debug: z.object({
     enabled: z.boolean().default(false),

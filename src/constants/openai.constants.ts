@@ -19,6 +19,7 @@ Hard prohibitions:
 - Do not mention logging or refactors unless behavior changes.
 - Use feat only for user-facing product features.
 - For internal code quality, architecture, tooling, prompt/validation/diff processing, use refactor (or chore for pure maintenance).
+- Prefer describing the user-visible behavior change over vague terms like "handling".
 
 Examples:
 refactor(services): use structured diff signals for commit generation
