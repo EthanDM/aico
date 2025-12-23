@@ -7,33 +7,33 @@ import GitService from './Git.service'
  */
 class UIService {
   /**
-   * Lets user select which bullet points to keep in the commit message body.
+   * Lets user select which notes to keep in the commit message body.
    *
    * @param body - The commit message body
-   * @returns The filtered body with only selected bullet points
+   * @returns The filtered body with only selected notes
    */
-  private async selectBulletPoints(body: string): Promise<string> {
-    const bullets = body
+  private async selectNotes(body: string): Promise<string> {
+    const notes = body
       .split('\n')
       .filter((line) => line.trim())
       .map((line) => line.trim())
 
     const { default: inquirer } = await import('inquirer')
-    const { selectedBullets } = await inquirer.prompt([
+    const { selectedNotes } = await inquirer.prompt([
       {
         type: 'checkbox',
-        name: 'selectedBullets',
+        name: 'selectedNotes',
         message:
-          'Select bullet points to keep (space to toggle, enter to confirm):',
-        choices: bullets.map((bullet) => ({
-          name: bullet,
-          checked: true, // All bullets start checked
+          'Select notes to keep (space to toggle, enter to confirm):',
+        choices: notes.map((note) => ({
+          name: note,
+          checked: true, // All notes start checked
         })),
         pageSize: 10,
       },
     ])
 
-    return selectedBullets.join('\n')
+    return selectedNotes.join('\n')
   }
 
   /**
@@ -61,95 +61,102 @@ class UIService {
   }
 
   /**
-   * Lets user edit individual bullet points inline.
+   * Lets user edit individual notes inline.
    *
    * @param body - The current commit body
    * @param stats - The diff stats to determine commit size
    * @returns The edited body
    */
-  private async editBullets(
-    body: string,
-    stats: { filesChanged: number }
-  ): Promise<string> {
-    const bullets = body
+  private async editNotes(body: string): Promise<string> {
+    const notes = body
       .split('\n')
       .filter((line) => line.trim())
       .map((line) => line.trim())
 
     const { default: inquirer } = await import('inquirer')
-    const editedBullets: string[] = []
+    const editedNotes: string[] = []
 
-    // Show guidance based on commit size
-    const isLargeCommit = stats.filesChanged > 2
-    console.log('\nBullet Point Guidelines:')
-    console.log('- Each bullet must describe a meaningful, specific change')
-    console.log(
-      '- Start with a strong action verb (Add, Refactor, Optimize, etc.)'
-    )
-    console.log('- Focus on the "why" and impact for non-obvious changes')
-    console.log(
-      `- For this ${isLargeCommit ? 'larger' : 'smaller'} commit, aim for ${
-        isLargeCommit ? '3-5' : '1-2'
-      } high-quality bullets\n`
-    )
+    console.log('\nNotes Guidelines:')
+    console.log('- Notes are optional and should be concise')
+    console.log('- Use notes only for risky or non-obvious changes')
+    console.log('- Keep to 1-2 notes maximum\n')
 
-    for (const bullet of bullets) {
-      const { editedBullet } = await inquirer.prompt([
+    for (const note of notes) {
+      const { editedNote } = await inquirer.prompt([
         {
           type: 'input',
-          name: 'editedBullet',
-          message: 'Edit bullet point (empty to remove):',
-          default: bullet,
+          name: 'editedNote',
+          message: 'Edit note (empty to remove):',
+          default: note,
           validate: (input: string) => {
             if (input.trim()) {
               if (input.length > 100)
-                return 'Bullet point must be under 100 characters'
-              if (!input.match(/^[A-Z][a-z]+/))
-                return 'Start with a capitalized action verb'
+                return 'Note must be under 100 characters'
               if (input.length < 10)
-                return 'Bullet point seems too short to be meaningful'
+                return 'Note seems too short to be meaningful'
             }
             return true
           },
         },
       ])
-      if (editedBullet.trim()) {
-        editedBullets.push(editedBullet.trim())
+      if (editedNote.trim()) {
+        editedNotes.push(editedNote.trim())
       }
     }
 
-    // Option to add new bullets
-    while (true) {
-      // Show current count and recommendation
-      const currentCount = editedBullets.length
-      const recommendedRange = isLargeCommit ? '3-5' : '1-2'
-      console.log(
-        `\nCurrent bullet count: ${currentCount} (recommended: ${recommendedRange})`
-      )
+    while (editedNotes.length < 2) {
+      console.log(`\nCurrent note count: ${editedNotes.length} (max 2)`)
 
-      const { newBullet } = await inquirer.prompt([
+      const { newNote } = await inquirer.prompt([
         {
           type: 'input',
-          name: 'newBullet',
-          message: 'Add new bullet point (empty to finish):',
+          name: 'newNote',
+          message: 'Add note (empty to finish):',
           validate: (input: string) => {
             if (input.trim()) {
               if (input.length > 100)
-                return 'Bullet point must be under 100 characters'
-              if (!input.match(/^[A-Z][a-z]+/))
-                return 'Start with a capitalized action verb'
+                return 'Note must be under 100 characters'
               if (input.length < 10)
-                return 'Bullet point seems too short to be meaningful'
+                return 'Note seems too short to be meaningful'
             }
             return true
           },
         },
       ])
-      if (!newBullet.trim()) break
-      editedBullets.push(newBullet.trim())
+      if (!newNote.trim()) break
+      editedNotes.push(newNote.trim())
     }
 
-    return editedBullets.join('\n')
+    return editedNotes.join('\n')
+  }
+
+  private async addNotes(): Promise<string | undefined> {
+    const { default: inquirer } = await import('inquirer')
+    const notes: string[] = []
+
+    while (notes.length < 2) {
+      const { note } = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'note',
+          message: 'Add note (empty to finish):',
+          validate: (input: string) => {
+            if (input.trim()) {
+              if (input.length > 100)
+                return 'Note must be under 100 characters'
+              if (input.length < 10)
+                return 'Note seems too short to be meaningful'
+            }
+            return true
+          },
+        },
+      ])
+
+      if (!note.trim()) break
+      notes.push(`- ${note.trim().replace(/^[-*]\s*/, '')}`)
+    }
+
+    return notes.length > 0 ? notes.join('\n') : undefined
   }
 
   /**
@@ -221,7 +228,10 @@ class UIService {
     action: string,
     message: CommitMessage,
     currentContext?: string
-  ): Promise<{ result: 'exit' | 'restart' | void; newContext?: string }> {
+  ): Promise<{
+    result: 'exit' | 'restart' | 'repeat' | void
+    newContext?: string
+  }> {
     switch (action) {
       case 'accept':
         await GitService.commit(message)
@@ -230,7 +240,6 @@ class UIService {
 
       case 'edit': {
         const { default: inquirer } = await import('inquirer')
-        const diff = await GitService.getStagedChanges()
 
         // First ask what type of edit they want to do
         const { editType } = await inquirer.prompt([
@@ -241,12 +250,12 @@ class UIService {
             choices: [
               { name: 'Edit title only', value: 'title' },
               {
-                name: 'Edit bullet points individually',
-                value: 'bullets-edit',
+                name: 'Edit notes individually',
+                value: 'notes-edit',
               },
               {
-                name: 'Select which bullet points to keep',
-                value: 'bullets-select',
+                name: 'Select which notes to keep',
+                value: 'notes-select',
               },
               { name: 'Edit everything in text editor', value: 'full' },
             ],
@@ -261,15 +270,15 @@ class UIService {
             newTitle = await this.editTitle(message.title)
             break
 
-          case 'bullets-edit':
+          case 'notes-edit':
             if (message.body) {
-              newBody = await this.editBullets(message.body, diff.stats)
+              newBody = await this.editNotes(message.body)
             }
             break
 
-          case 'bullets-select':
+          case 'notes-select':
             if (message.body) {
-              newBody = await this.selectBulletPoints(message.body)
+              newBody = await this.selectNotes(message.body)
             }
             break
 
@@ -299,6 +308,26 @@ class UIService {
         return { result: undefined }
       }
 
+      case 'edit-title': {
+        const newTitle = await this.editTitle(message.title)
+        await GitService.commit({
+          title: newTitle,
+          body: message.body,
+        })
+        LoggerService.info('✅ Commit created successfully!')
+        return { result: undefined }
+      }
+
+      case 'add-notes': {
+        const newBody = await this.addNotes()
+        await GitService.commit({
+          title: message.title,
+          body: newBody,
+        })
+        LoggerService.info('✅ Commit created successfully!')
+        return { result: undefined }
+      }
+
       case 'regenerate': {
         const newContext = await this.promptForRegenerationContext(
           currentContext
@@ -313,7 +342,7 @@ class UIService {
         const diff = await GitService.getStagedChanges()
         console.log('\nFull diff:')
         console.log(diff.summary)
-        return this.handleAction(action, message, currentContext)
+        return { result: 'repeat' }
 
       case 'cancel':
         LoggerService.info('👋 Operation cancelled')
@@ -330,20 +359,31 @@ class UIService {
    *
    * @returns The chosen action
    */
-  public async promptForAction(): Promise<string> {
+  public async promptForAction(message: CommitMessage): Promise<string> {
     const { default: inquirer } = await import('inquirer')
-    const { action } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: 'What would you like to do?',
-        choices: [
+    const hasBody = Boolean(message.body && message.body.trim())
+    const choices = hasBody
+      ? [
           { name: 'Accept and commit', value: 'accept' },
           { name: 'Edit message', value: 'edit' },
           { name: 'Regenerate message', value: 'regenerate' },
           { name: 'View full diff', value: 'diff' },
           { name: 'Cancel', value: 'cancel' },
-        ],
+        ]
+      : [
+          { name: 'Accept and commit', value: 'accept' },
+          { name: 'Edit title', value: 'edit-title' },
+          { name: 'Add notes (optional)', value: 'add-notes' },
+          { name: 'Regenerate message', value: 'regenerate' },
+          { name: 'View full diff', value: 'diff' },
+          { name: 'Cancel', value: 'cancel' },
+        ]
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'What would you like to do?',
+        choices,
       },
     ])
 

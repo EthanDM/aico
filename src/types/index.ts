@@ -6,19 +6,19 @@ import { z } from 'zod'
 export const ConfigSchema = z.object({
   openai: z.object({
     apiKey: z.string(),
-    model: z.string().default('gpt-4o'),
-    maxTokens: z.number().default(500),
-    temperature: z.number().default(0.5),
-    topP: z.number().default(1),
-    frequencyPenalty: z.number().default(0.2),
+    model: z.string().default('gpt-4o-mini'),
+    maxTokens: z.number().default(200),
+    temperature: z.number().default(0.3),
+    topP: z.number().default(0.9),
+    frequencyPenalty: z.number().default(0),
     presencePenalty: z.number().default(0),
   }),
   commit: z.object({
     maxTitleLength: z.number().default(72),
-    maxBodyLength: z.number().default(500),
+    maxBodyLength: z.number().default(200),
     wrapBody: z.number().default(72),
-    includeBody: z.boolean().default(true),
-    includeFooter: z.boolean().default(true),
+    includeBody: z.enum(['auto', 'never', 'always']).default('auto'),
+    includeFooter: z.boolean().default(false),
   }),
   debug: z.object({
     enabled: z.boolean().default(false),

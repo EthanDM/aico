@@ -37,7 +37,7 @@ class WorkflowService {
       this.options.context = true // Enable context mode
     }
 
-    this.openai = createOpenAIService(config.openai, this.options)
+    this.openai = createOpenAIService(config, this.options)
   }
 
   /**
@@ -246,8 +246,9 @@ class WorkflowService {
     message: CommitMessage,
     currentContext?: string
   ): Promise<'exit' | 'restart' | void> {
+    const action = await uiService.promptForAction(message)
     const { result, newContext } = await uiService.handleAction(
-      await uiService.promptForAction(),
+      action,
       message,
       currentContext
     )
@@ -256,6 +257,10 @@ class WorkflowService {
       // Generate a new message with potentially updated context
       const newMessage = await this.generateCommitMessage()
       return this.promptForAction(newMessage, newContext)
+    }
+
+    if (result === 'repeat') {
+      return this.promptForAction(message, currentContext)
     }
 
     return result

@@ -6,6 +6,7 @@ import GitService from './Git.service'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 
 type OpenAIConfig = Config['openai']
+type CommitConfig = Config['commit']
 
 interface OpenAIOptions {
   context?: boolean | string
@@ -19,11 +20,13 @@ interface OpenAIOptions {
 export class OpenAIService {
   private client: OpenAI
   private config: OpenAIConfig
+  private commitConfig: CommitConfig
   private options: OpenAIOptions
 
-  constructor(config: OpenAIConfig, options: OpenAIOptions) {
-    this.config = config
-    this.client = new OpenAI({ apiKey: config.apiKey })
+  constructor(config: Config, options: OpenAIOptions) {
+    this.config = config.openai
+    this.commitConfig = config.commit
+    this.client = new OpenAI({ apiKey: this.config.apiKey })
     this.options = options
   }
 
@@ -169,19 +172,144 @@ export class OpenAIService {
     }
   }
 
+  private shouldIncludeBody(
+    mode: CommitConfig['includeBody'],
+    stats: ProcessedDiff['stats'],
+    userMessage?: string
+  ): boolean {
+    if (mode === 'always') {
+      return true
+    }
+    if (mode === 'never') {
+      return false
+    }
+
+    const linesChanged = stats.additions + stats.deletions
+    const hasUserContext = Boolean(userMessage && userMessage.trim())
+    return (
+      stats.filesChanged >= 4 || linesChanged >= 150 || hasUserContext
+    )
+  }
+
+  private containsFilePathOrExtension(text: string): boolean {
+    const hasPath =
+      /[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/.test(text) ||
+      /[A-Za-z0-9._-]+\\[A-Za-z0-9._\\-]+/.test(text)
+    const hasExtension = /\b[\w-]+\.[a-z][a-z0-9]{1,4}\b/i.test(text)
+    return hasPath || hasExtension
+  }
+
+  private validateCommitMessage(
+    message: CommitMessage,
+    options: {
+      maxTitleLength: number
+      includeBodyMode: CommitConfig['includeBody']
+      includeBodyAllowed: boolean
+    }
+  ): { valid: boolean; errors: string[] } {
+    const errors: string[] = []
+    const title = message.title.trim()
+
+    const subjectPattern =
+      /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: .+$/
+    if (!subjectPattern.test(title)) {
+      errors.push('Subject must follow Conventional Commits format')
+    }
+
+    if (title.length > options.maxTitleLength) {
+      errors.push(
+        `Subject exceeds ${options.maxTitleLength} characters`
+      )
+    }
+
+    if (this.containsFilePathOrExtension(title)) {
+      errors.push('Subject must not include file paths or extensions')
+    }
+
+    const bannedSubjectWords = [
+      'update',
+      'updates',
+      'updated',
+      'enhance',
+      'enhanced',
+      'improve',
+      'improved',
+      'misc',
+      'change',
+      'changes',
+    ]
+    const bannedSubjectPattern = new RegExp(
+      `\\b(${bannedSubjectWords.join('|')})\\b`,
+      'i'
+    )
+    if (bannedSubjectPattern.test(title)) {
+      errors.push('Subject contains banned filler words')
+    }
+
+    if (message.body) {
+      if (
+        options.includeBodyMode === 'never' ||
+        !options.includeBodyAllowed
+      ) {
+        errors.push('Body is not allowed for this commit')
+      }
+
+      const bodyLines = message.body
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+
+      if (bodyLines.length > 2) {
+        errors.push('Body must be 2 bullets or fewer')
+      }
+
+      if (bodyLines.some((line) => !line.startsWith('- '))) {
+        errors.push('Body bullets must start with "- "')
+      }
+
+      const narrationWords = [
+        'update',
+        'updated',
+        'modify',
+        'modified',
+        'change',
+        'changed',
+        'refactor',
+        'refactored',
+        'adjust',
+        'adjusted',
+        'cleanup',
+        'cleaned',
+      ]
+      const narrationPattern = new RegExp(
+        `\\b(${narrationWords.join('|')})\\b`,
+        'i'
+      )
+      if (bodyLines.some((line) => narrationPattern.test(line))) {
+        errors.push('Body notes must avoid narration words')
+      }
+    }
+
+    return { valid: errors.length === 0, errors }
+  }
+
   /**
    * Builds the prompt for the OpenAI API.
    *
    * @param diff - The diff to generate a commit message for.
    * @param userMessage - Optional user-provided message for guidance.
+   * @param includeBodyAllowed - Whether a body is allowed for this commit.
+   * @param includeBodyMode - The includeBody policy mode.
    * @returns The prompt for the OpenAI API.
    */
   private async buildPrompt(
     diff: ProcessedDiff,
-    userMessage?: string
+    userMessage: string | undefined,
+    includeBodyAllowed: boolean,
+    includeBodyMode: CommitConfig['includeBody']
   ): Promise<string> {
-    const parts = [
-      'TASK: Generate a conventional commit message for these changes.',
+    const parts: string[] = [
+      'Generate a conventional commit message for the changes below.',
     ]
 
     // Add branch context for scope hints
@@ -210,10 +338,10 @@ export class OpenAIService {
 
       if (potentialScope && potentialScope.length > 2) {
         parts.push(
-          `BRANCH: ${branchName} (suggested scope: ${potentialScope.toLowerCase()})`
+          `Branch: ${branchName} (scope hint: ${potentialScope.toLowerCase()})`
         )
       } else {
-        parts.push(`BRANCH: ${branchName}`)
+        parts.push(`Branch: ${branchName}`)
       }
     }
 
@@ -233,106 +361,86 @@ export class OpenAIService {
     )
 
     if (confirmed) {
-      parts.push('\nCOMMIT TYPE: Merge commit')
+      parts.push('This is a merge commit.')
       if (sourceBranch && targetBranch) {
-        parts.push(`MERGE: ${sourceBranch} → ${targetBranch}`)
+        parts.push(`Merge: ${sourceBranch} → ${targetBranch}`)
       }
       if (mergeInfo) {
-        parts.push('MERGE DETAILS:')
         parts.push(...mergeInfo)
       }
     }
 
     // Add user guidance if provided - but keep it focused
     if (userMessage) {
-      parts.push('\nUSER CONTEXT:')
+      parts.push('User context:')
       parts.push(userMessage)
-      parts.push(
-        '(Use this as guidance but ensure the commit reflects actual changes)'
-      )
     }
 
-    // Add recent commits context with clear purpose
-    const recentCommits = await GitService.getRecentCommits(5) // Get 5 to filter from
-
-    // Debug logging to understand what commits we're getting
-    if (recentCommits.length > 0) {
-      LoggerService.debug('\n🔍 Recent commits retrieved:')
-      recentCommits.forEach((commit, index) => {
-        const firstLine = commit.message.split('\n')[0]
-        LoggerService.debug(`${index + 1}. ${firstLine}`)
-      })
+    if (includeBodyMode === 'never') {
+      parts.push('Body is not allowed for this commit.')
+    } else if (!includeBodyAllowed) {
+      parts.push('Return only the subject line.')
     }
 
-    // Filter for good examples (conventional commits only)
-    const goodExamples = recentCommits
-      .filter((commit) => {
-        const firstLine = commit.message.split('\n')[0]
-        // More lenient pattern - allows optional scope and various formats
-        const strictMatch =
-          /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?: .+/.test(
-            firstLine
+    if (includeBodyMode === 'always') {
+      const recentCommits = await GitService.getRecentCommits(5)
+
+      if (recentCommits.length > 0) {
+        LoggerService.debug('\n🔍 Recent commits retrieved:')
+        recentCommits.forEach((commit, index) => {
+          const firstLine = commit.message.split('\n')[0]
+          LoggerService.debug(`${index + 1}. ${firstLine}`)
+        })
+      }
+
+      const goodExamples = recentCommits
+        .filter((commit) => {
+          const firstLine = commit.message.split('\n')[0]
+          const strictMatch =
+            /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?: .+/.test(
+              firstLine
+            )
+          const lenientMatch =
+            /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)[:\s].+/.test(
+              firstLine
+            )
+
+          const matches = strictMatch || lenientMatch
+          LoggerService.debug(
+            `Checking: "${firstLine}" -> ${matches ? 'MATCH' : 'NO MATCH'}`
           )
-        const lenientMatch =
-          /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)[:\s].+/.test(
-            firstLine
-          )
 
-        const matches = strictMatch || lenientMatch
+          return matches
+        })
+        .slice(0, 3)
 
-        // Debug each commit's match status
-        LoggerService.debug(
-          `Checking: "${firstLine}" -> ${matches ? 'MATCH' : 'NO MATCH'}`
-        )
-
-        return matches
-      })
-      .slice(0, 3) // Take best 3 examples
-
-    LoggerService.debug(`\n📊 Filtered to ${goodExamples.length} good examples`)
-
-    if (goodExamples.length > 0) {
-      parts.push('\nRECENT COMMITS (for style consistency only):')
-      goodExamples.forEach((commit) => {
-        const shortMessage = commit.message.split('\n')[0] // Only first line
-        parts.push(`• ${shortMessage}`)
-      })
-      parts.push(
-        'NOTE: Use these ONLY for style/format reference, not content guidance'
-      )
-    } else if (recentCommits.length > 0) {
-      // If no good examples, show a note about recent commits in debug
       LoggerService.debug(
-        '\n⚠️  No conventional commits found, showing all recent commits for reference:'
+        `\n📊 Filtered to ${goodExamples.length} good examples`
       )
-      recentCommits.forEach((commit, index) => {
-        const firstLine = commit.message.split('\n')[0]
-        LoggerService.debug(`${index + 1}. ${firstLine}`)
-      })
-    }
 
-    // Add change analysis with clear structure
-    parts.push('\n' + '='.repeat(50))
-    parts.push('CHANGES TO ANALYZE:')
-    parts.push('='.repeat(50))
+      if (goodExamples.length > 0) {
+        parts.push('Recent commits (style only):')
+        goodExamples.forEach((commit) => {
+          const shortMessage = commit.message.split('\n')[0]
+          parts.push(`- ${shortMessage}`)
+        })
+      } else if (recentCommits.length > 0) {
+        LoggerService.debug(
+          '\n⚠️  No conventional commits found in recent history'
+        )
+      }
+    }
 
     if (processedDiff.stats.wasSummarized) {
+      parts.push('Diff summary (summarized):')
       parts.push(processedDiff.summary)
-      parts.push(`\nCHANGE STATS:`)
-      parts.push(`• Files: ${processedDiff.stats.filesChanged}`)
-      parts.push(`• Additions: ${processedDiff.stats.additions} lines`)
-      parts.push(`• Deletions: ${processedDiff.stats.deletions} lines`)
+      parts.push(
+        `Stats: ${processedDiff.stats.filesChanged} files, ${processedDiff.stats.additions} additions, ${processedDiff.stats.deletions} deletions`
+      )
     } else {
+      parts.push('Diff summary:')
       parts.push(processedDiff.summary)
     }
-
-    parts.push('\n' + '='.repeat(50))
-    parts.push('INSTRUCTIONS:')
-    parts.push('1. Analyze the changes above')
-    parts.push('2. Choose the most accurate commit type')
-    parts.push('3. Write a clear, specific commit message')
-    parts.push('4. Focus on the most significant changes')
-    parts.push('='.repeat(50))
 
     return parts.join('\n')
   }
@@ -469,19 +577,23 @@ export class OpenAIService {
       }
     }
 
-    const prompt = await this.buildPrompt(diff, userMessage)
+    const includeBodyAllowed = this.shouldIncludeBody(
+      this.commitConfig.includeBody,
+      diff.stats,
+      userMessage
+    )
 
-    // Log model info
-    LoggerService.debug(`\n🤖 Model: ${this.config.model}`)
+    const prompt = await this.buildPrompt(
+      diff,
+      userMessage,
+      includeBodyAllowed,
+      this.commitConfig.includeBody
+    )
 
-    const messages: ChatCompletionMessageParam[] = [
+    const baseMessages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content:
-          COMMIT_MESSAGE_SYSTEM_CONTENT +
-          (userMessage
-            ? '\nA user message has been provided as guidance. Consider it strongly for the commit message, but ensure the message accurately reflects the actual changes.'
-            : ''),
+        content: COMMIT_MESSAGE_SYSTEM_CONTENT,
       },
       {
         role: 'user',
@@ -489,37 +601,83 @@ export class OpenAIService {
       },
     ]
 
-    LoggerService.debug('\n🔍 Building OpenAI Request:')
-    LoggerService.debug(`Model: ${this.config.model}`)
-    LoggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
-    LoggerService.debug(`Temperature: ${this.config.temperature}`)
-    LoggerService.debug('Messages:')
-    LoggerService.debug(`system: ${messages[0].content}`)
-    LoggerService.debug(`user: ${prompt}`)
+    const retryModel = this.config.model.includes('mini')
+      ? 'gpt-5-mini'
+      : this.config.model
+    const retryTemperature = Math.min(this.config.temperature, 0.1)
 
-    LoggerService.debug('\n📤 Sending request to OpenAI...')
+    let lastMessage: CommitMessage | undefined
+    let lastErrors: string[] = []
 
-    const response = await this.client.chat.completions.create({
-      model: this.config.model,
-      messages,
-      max_tokens: this.config.maxTokens,
-      temperature: this.config.temperature,
-      top_p: this.config.topP,
-      frequency_penalty: this.config.frequencyPenalty,
-      presence_penalty: this.config.presencePenalty,
-    })
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const isRetry = attempt === 1
+      const model = isRetry ? retryModel : this.config.model
+      const temperature = isRetry ? retryTemperature : this.config.temperature
+      const messages = isRetry
+        ? [
+            baseMessages[0],
+            {
+              role: 'user',
+              content:
+                prompt +
+                `\nRepair these violations:\n- ${lastErrors.join('\n- ')}\nReturn only the corrected commit message.`,
+            },
+          ]
+        : baseMessages
 
-    LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
+      LoggerService.debug('\n🔍 Building OpenAI Request:')
+      LoggerService.debug(`Model: ${model}`)
+      LoggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
+      LoggerService.debug(`Temperature: ${temperature}`)
+      LoggerService.debug('Messages:')
+      LoggerService.debug(`system: ${messages[0].content}`)
+      LoggerService.debug(`user: ${messages[1].content}`)
 
-    LoggerService.debug('\n📥 Received response from OpenAI:')
-    LoggerService.debug(JSON.stringify(response, null, 2))
+      LoggerService.debug('\n📤 Sending request to OpenAI...')
 
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      throw new Error('No commit message generated')
+      const response = await this.client.chat.completions.create({
+        model,
+        messages,
+        max_tokens: this.config.maxTokens,
+        temperature,
+        top_p: this.config.topP,
+        frequency_penalty: this.config.frequencyPenalty,
+        presence_penalty: this.config.presencePenalty,
+      })
+
+      LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
+
+      LoggerService.debug('\n📥 Received response from OpenAI:')
+      LoggerService.debug(JSON.stringify(response, null, 2))
+
+      const content = response.choices[0]?.message?.content
+      if (!content) {
+        throw new Error('No commit message generated')
+      }
+
+      const parsedMessage = this.parseCommitMessage(content)
+      lastMessage = parsedMessage
+
+      const validation = this.validateCommitMessage(parsedMessage, {
+        maxTitleLength: this.commitConfig.maxTitleLength,
+        includeBodyMode: this.commitConfig.includeBody,
+        includeBodyAllowed,
+      })
+
+      if (validation.valid) {
+        return parsedMessage
+      }
+
+      lastErrors = validation.errors
+      LoggerService.debug(
+        `Commit message validation failed: ${validation.errors.join('; ')}`
+      )
     }
 
-    return this.parseCommitMessage(content)
+    return {
+      title: lastMessage?.title?.trim() || 'chore: apply changes',
+      body: undefined,
+    }
   }
 
   /**
@@ -680,7 +838,7 @@ Examples of bad branch names:
  * @returns An OpenAI service instance
  */
 export const createOpenAIService = (
-  config: OpenAIConfig,
+  config: Config,
   options: OpenAIOptions
 ): OpenAIService => {
   return new OpenAIService(config, options)

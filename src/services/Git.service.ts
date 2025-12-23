@@ -142,13 +142,11 @@ class GitService {
       return message
     }
 
-    return [
-      message.title,
-      '\n', // Empty line after title
-      message.body,
-    ]
-      .filter(Boolean)
-      .join('\n')
+    if (!message.body) {
+      return message.title
+    }
+
+    return [message.title, '', message.body].join('\n')
   }
 
   /**
