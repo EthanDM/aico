@@ -595,6 +595,86 @@ export class OpenAIService {
     return true
   }
 
+  private splitValidationErrors(errors: string[]): {
+    structural: string[]
+    style: string[]
+  } {
+    const structural: string[] = []
+    const style: string[] = []
+
+    errors.forEach((error) => {
+      if (
+        error.includes('Conventional Commits format') ||
+        error.includes('Use refactor/chore')
+      ) {
+        structural.push(error)
+      } else {
+        style.push(error)
+      }
+    })
+
+    return { structural, style }
+  }
+
+  private stripFilePaths(text: string): string {
+    let cleaned = text
+    cleaned = cleaned.replace(/[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/g, '')
+    cleaned = cleaned.replace(/[A-Za-z0-9._-]+\\[A-Za-z0-9._\\-]+/g, '')
+    cleaned = cleaned.replace(/\b[\w-]+\.[a-z][a-z0-9]{1,4}\b/gi, '')
+    return cleaned
+  }
+
+  private removeBannedWords(text: string): string {
+    const bannedSubjectPattern = new RegExp(
+      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
+      'gi'
+    )
+    return text.replace(bannedSubjectPattern, '')
+  }
+
+  private repairSubject(
+    diff: ProcessedDiff,
+    candidate: string
+  ): string | undefined {
+    const maxLength = this.commitConfig.maxTitleLength
+    const normalized = this.normalizeSubject(candidate)
+    const match = normalized.match(SUBJECT_PATTERN)
+    if (!match) {
+      return undefined
+    }
+
+    const type = match[1]
+    const scope = match[2] || ''
+    let description = match[3]
+
+    description = this.stripFilePaths(description)
+    description = this.removeBannedWords(description)
+    description = description.replace(/\s+/g, ' ').trim()
+    description = description
+      .replace(/\b(from|in|on|at|within|inside)\s*$/i, '')
+      .trim()
+
+    if (
+      !description ||
+      VAGUE_SUBJECT_PATTERNS.some((pattern) =>
+        pattern.test(`${type}${scope}: ${description}`)
+      )
+    ) {
+      description = 'align commit flow'
+    }
+
+    const subject = this.truncateSubjectToMax(
+      `${type}${scope}: ${description}`,
+      maxLength
+    )
+
+    if (!this.isValidSubject(subject, maxLength)) {
+      return undefined
+    }
+
+    return subject
+  }
+
   private truncateSubjectToMax(subject: string, maxLength: number): string {
     if (subject.length <= maxLength) return subject
     const match = subject.match(
@@ -941,6 +1021,21 @@ export class OpenAIService {
       })
       if (subjectOnlyValidation.valid) {
         return subjectOnly
+      }
+
+      const { structural } = this.splitValidationErrors(validation.errors)
+      if (structural.length === 0) {
+        const repaired = this.repairSubject(diff, parsedMessage.title)
+        if (repaired) {
+          LoggerService.debug(
+            `Repaired subject locally: "${parsedMessage.title}" -> "${repaired}"`
+          )
+          return { title: repaired, body: undefined }
+        }
+        return {
+          title: this.buildSafeFallbackSubject(diff, parsedMessage.title),
+          body: undefined,
+        }
       }
 
       const nonBodyErrors = validation.errors.filter(
