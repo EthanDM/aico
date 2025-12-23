@@ -170,6 +170,51 @@ export class OpenAIService {
     return internalCount / paths.length >= 0.5
   }
 
+  private isDocsOnlyChange(diff: ProcessedDiff): boolean {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    if (paths.length === 0) {
+      return false
+    }
+
+    return paths.every((path) => {
+      if (path === 'README.md') return true
+      if (/^docs\//.test(path)) return true
+      if (/\.md$/i.test(path)) return true
+      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
+      return false
+    })
+  }
+
+  private isDocsTouched(diff: ProcessedDiff): boolean {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    return paths.some((path) => {
+      if (path === 'README.md') return true
+      if (/^docs\//.test(path)) return true
+      if (/\.md$/i.test(path)) return true
+      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
+      return false
+    })
+  }
+
+  private getDocsTouchedList(diff: ProcessedDiff): string[] {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    return paths.filter((path) => {
+      if (path === 'README.md') return true
+      if (/^docs\//.test(path)) return true
+      if (/\.md$/i.test(path)) return true
+      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
+      return false
+    })
+  }
+
+  private getDocsScope(diff: ProcessedDiff): string {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    if (paths.some((path) => path === 'README.md')) {
+      return 'readme'
+    }
+    return 'docs'
+  }
+
   private containsFilePathOrExtension(text: string): boolean {
     const hasPath =
       /[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/.test(text) ||
@@ -185,6 +230,7 @@ export class OpenAIService {
       includeBodyMode: CommitConfig['includeBody']
       includeBodyAllowed: boolean
       internalChange?: boolean
+      docsOnly?: boolean
     }
   ): { valid: boolean; errors: string[] } {
     const errors: string[] = []
@@ -217,6 +263,10 @@ export class OpenAIService {
 
     if (options.internalChange && /^feat(\(|:)/.test(title)) {
       errors.push('Use refactor/chore for internal tooling changes (not feat)')
+    }
+
+    if (options.docsOnly && !/^docs(\(|:)/.test(title)) {
+      errors.push('Use docs for documentation-only changes')
     }
 
     if (message.body) {
@@ -417,8 +467,23 @@ export class OpenAIService {
       parts.push(`Scope hint: ${scopeHint}`)
     }
 
-    if (this.isInternalToolingChange(diff)) {
+    if (this.isDocsOnlyChange(diff)) {
+      parts.push('Type hint: docs (documentation-only change)')
+      parts.push(`Scope hint: ${this.getDocsScope(diff)}`)
+    }
+
+    if (this.isDocsOnlyChange(diff)) {
+      parts.push('Type hint: docs (documentation-only change)')
+      parts.push(`Scope hint: ${this.getDocsScope(diff)}`)
+    } else if (this.isInternalToolingChange(diff)) {
       parts.push('Type hint: refactor (internal tooling change)')
+    }
+
+    if (this.isDocsTouched(diff) && !this.isDocsOnlyChange(diff)) {
+      const docsTouched = this.getDocsTouchedList(diff).slice(0, 3)
+      if (docsTouched.length > 0) {
+        parts.push(`Docs touched: ${docsTouched.join(', ')}`)
+      }
     }
 
     if (nameStatus.length > 0) {
@@ -555,7 +620,8 @@ export class OpenAIService {
     errors.forEach((error) => {
       if (
         error.includes('Conventional Commits format') ||
-        error.includes('Use refactor/chore')
+        error.includes('Use refactor/chore') ||
+        error.includes('Use docs for documentation-only changes')
       ) {
         structural.push(error)
       } else {
@@ -726,7 +792,11 @@ export class OpenAIService {
       if (template) {
         return template
       }
-      description = 'align commit flow'
+      if (this.isDocsTouched(diff) && !this.isDocsOnlyChange(diff)) {
+        description = 'improve docs detection for commit messages'
+      } else {
+        description = 'align commit flow'
+      }
     }
 
     const prefix = `${type}${scope}: `
@@ -741,6 +811,30 @@ export class OpenAIService {
     )
 
     if (!this.isValidSubject(subject, maxLength)) {
+      return undefined
+    }
+
+    return subject
+  }
+
+  private repairDocsSubject(
+    diff: ProcessedDiff,
+    candidate: string
+  ): string | undefined {
+    if (!this.isDocsOnlyChange(diff)) {
+      return undefined
+    }
+
+    const normalized = this.normalizeSubject(candidate)
+    const match = normalized.match(SUBJECT_PARSE_PATTERN)
+    const description = match ? match[3] : 'update documentation'
+    const scope = this.getDocsScope(diff)
+    const subject = this.truncateSubjectToMax(
+      `docs(${scope}): ${description}`,
+      this.commitConfig.maxTitleLength
+    )
+
+    if (!this.isValidSubject(subject, this.commitConfig.maxTitleLength)) {
       return undefined
     }
 
@@ -983,6 +1077,7 @@ export class OpenAIService {
       : this.config.model
     const retryTemperature = Math.min(this.config.temperature, 0.1)
     const internalChange = this.isInternalToolingChange(diff)
+    const docsOnly = this.isDocsOnlyChange(diff)
 
     let lastMessage: CommitMessage | undefined
     let lastErrors: string[] = []
@@ -1076,6 +1171,7 @@ export class OpenAIService {
         includeBodyMode: this.commitConfig.includeBody,
         includeBodyAllowed,
         internalChange,
+        docsOnly,
       })
 
       if (validation.valid) {
@@ -1091,9 +1187,18 @@ export class OpenAIService {
         includeBodyMode: this.commitConfig.includeBody,
         includeBodyAllowed,
         internalChange,
+        docsOnly,
       })
       if (subjectOnlyValidation.valid) {
         return { message: subjectOnly }
+      }
+
+      const docsRepaired = this.repairDocsSubject(diff, parsedMessage.title)
+      if (docsRepaired) {
+        LoggerService.debug(
+          `Repaired subject locally: "${parsedMessage.title}" -> "${docsRepaired}"`
+        )
+        return { message: { title: docsRepaired, body: undefined } }
       }
 
       const repaired = this.repairSubject(diff, parsedMessage.title)
