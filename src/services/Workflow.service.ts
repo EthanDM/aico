@@ -239,7 +239,7 @@ class WorkflowService {
       }
 
       if (result === 'exit') {
-        throw new Error('Branch name generation cancelled')
+        return ''
       }
 
       return branchName

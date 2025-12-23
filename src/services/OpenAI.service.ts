@@ -1237,7 +1237,11 @@ Examples of bad branch names:
         'docs/',
       ]
       let normalizedBranch = branchName
-      if (!validPrefixes.some((prefix) => normalizedBranch.startsWith(prefix))) {
+      const hasValidPrefix = validPrefixes.some((prefix) =>
+        normalizedBranch.startsWith(prefix)
+      )
+      if (!hasValidPrefix) {
+        normalizedBranch = normalizedBranch.replace(/^[^/]+\//, '')
         normalizedBranch = prefixHint + normalizedBranch.replace(/^\/+/, '')
       }
 
@@ -1296,9 +1300,11 @@ Examples of bad branch names:
 
     const parts: string[] = []
 
-    if (nameStatus.length > 0) {
+    if (nameStatus.length > 0 && topFiles.length === 0) {
+      const maxEntries = 10
+      const shown = nameStatus.slice(0, maxEntries)
       parts.push('Name-status:')
-      nameStatus.forEach((entry) => {
+      shown.forEach((entry) => {
         if (entry.status === 'R' || entry.status === 'C') {
           const oldPath = entry.oldPath || 'unknown'
           parts.push(`- ${entry.status} ${oldPath} -> ${entry.path}`)
@@ -1306,6 +1312,9 @@ Examples of bad branch names:
           parts.push(`- ${entry.status} ${entry.path}`)
         }
       })
+      if (nameStatus.length > maxEntries) {
+        parts.push(`- ... +${nameStatus.length - maxEntries} more`)
+      }
     }
 
     parts.push('Stats:')
