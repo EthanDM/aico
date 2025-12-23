@@ -440,6 +440,32 @@ class GitService {
   }
 
   /**
+   * Builds a deterministic merge commit message.
+   */
+  public async buildMergeCommitMessage(): Promise<CommitMessage> {
+    const { source, target } = await this.getMergeHeads()
+    const title =
+      source && target
+        ? `merge: ${source} into ${target}`
+        : 'merge: resolve conflicts'
+
+    const hasConflicts = await this.hasMergeConflicts()
+    return {
+      title,
+      body: hasConflicts ? '- resolve merge conflicts' : undefined,
+    }
+  }
+
+  private async hasMergeConflicts(): Promise<boolean> {
+    try {
+      const conflicts = await this.git.raw(['ls-files', '-u'])
+      return conflicts.trim().length > 0
+    } catch (error) {
+      return false
+    }
+  }
+
+  /**
    * Checks if we're currently in the middle of a merge operation.
    *
    * @returns True if we're in the middle of a merge, false otherwise.

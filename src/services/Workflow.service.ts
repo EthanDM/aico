@@ -101,6 +101,12 @@ class WorkflowService {
       }
     }
 
+    const isMerge =
+      this.options.merge || (await GitService.isMergingBranch())
+    if (isMerge) {
+      return GitService.buildMergeCommitMessage()
+    }
+
     // Get the staged changes after staging is handled
     const diff = await GitService.getStagedChanges(
       this.options.merge,
