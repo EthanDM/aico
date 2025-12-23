@@ -8,15 +8,6 @@ import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 type OpenAIConfig = Config['openai']
 type CommitConfig = Config['commit']
 
-const PATH_SCOPE_MAP = [
-  { scope: 'services', match: /^src\/services\// },
-  { scope: 'processors', match: /^src\/processors\// },
-  { scope: 'constants', match: /^src\/constants\// },
-  { scope: 'types', match: /^src\/types\// },
-  { scope: 'cli', match: /^src\/cli\.ts$/ },
-  { scope: 'config', match: /^(config\.|\.config\.|tsconfig\.|package\.json)/ },
-]
-
 const SUBJECT_PATTERN =
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: .+$/
 
@@ -129,103 +120,6 @@ export class OpenAIService {
     return { isMerge, mergeInfo, sourceBranch, targetBranch }
   }
 
-  /**
-   * Checks if a file appears to be binary/media content.
-   *
-   * @param filename - The filename to check
-   * @returns True if the file appears to be binary/media
-   */
-  private isBinaryOrMediaFile(filename: string): boolean {
-    const binaryExtensions = [
-      // Video
-      'mp4',
-      'mov',
-      'avi',
-      'mkv',
-      'wmv',
-      // Images
-      'png',
-      'jpg',
-      'jpeg',
-      'gif',
-      'bmp',
-      'ico',
-      'svg',
-      'webp',
-      // Audio
-      'mp3',
-      'wav',
-      'ogg',
-      'm4a',
-      // Documents
-      'pdf',
-      'doc',
-      'docx',
-      'xls',
-      'xlsx',
-      'ppt',
-      'pptx',
-      // Archives
-      'zip',
-      'rar',
-      'tar',
-      'gz',
-      '7z',
-      // Other binaries
-      'exe',
-      'dll',
-      'so',
-      'dylib',
-      'bin',
-      // Font files
-      'ttf',
-      'otf',
-      'woff',
-      'woff2',
-    ]
-    const ext = filename.split('.').pop()?.toLowerCase()
-    return ext ? binaryExtensions.includes(ext) : false
-  }
-
-  /**
-   * Filters and processes the diff summary to exclude binary/media content.
-   *
-   * @param diff - The original diff
-   * @returns Processed diff with binary content removed
-   */
-  private processDiffContent(diff: ProcessedDiff): ProcessedDiff {
-    const lines = diff.summary.split('\n')
-    const filteredLines: string[] = []
-    let skipCurrentFile = false
-
-    for (const line of lines) {
-      // Check for file headers in diff
-      if (line.startsWith('diff --git')) {
-        const filename = line.split(' ').pop()?.replace('b/', '') ?? ''
-        skipCurrentFile = this.isBinaryOrMediaFile(filename)
-        if (skipCurrentFile) {
-          filteredLines.push(`Skipped binary/media file: ${filename}`)
-          continue
-        }
-      }
-
-      // Skip lines if we're in a binary file section
-      if (skipCurrentFile) {
-        if (line.startsWith('diff --git')) {
-          skipCurrentFile = false // Reset for next file
-        } else {
-          continue
-        }
-      }
-
-      filteredLines.push(line)
-    }
-
-    return {
-      ...diff,
-      summary: filteredLines.join('\n'),
-    }
-  }
 
   private shouldIncludeBody(
     mode: CommitConfig['includeBody'],
@@ -605,9 +499,10 @@ export class OpenAIService {
   private getScopeRules(): { scope: string; match: RegExp }[] {
     const fallbackRules = [
       { scope: 'translations', match: /\/translations\// },
+      { scope: 'tests', match: /\/(__tests__|tests)\// },
+      { scope: 'config', match: /(config|\.config|tsconfig|package)\./ },
+      { scope: 'docs', match: /\/(docs|doc)\// },
       { scope: 'services', match: /\/services\// },
-      { scope: 'types', match: /\/types\// },
-      { scope: 'constants', match: /\/constants\// },
     ]
 
     const rawRules = this.commitConfig.scopeRules || []
@@ -687,6 +582,76 @@ export class OpenAIService {
     return text.replace(bannedSubjectPattern, '')
   }
 
+  private normalizeRenameDescription(description: string): string {
+    const normalized = description.replace(/\s+/g, ' ').trim()
+    // Examples: "replace A with B" -> "rename A to B", "A -> B" -> "rename A to B".
+    const replaceMatch = normalized.match(
+      /^replace\s+(.+?)\s+with\s+(.+)$/i
+    )
+    if (replaceMatch) {
+      return `rename ${replaceMatch[1]} to ${replaceMatch[2]}`
+    }
+
+    const renameMatch = normalized.match(/^rename\s+(.+?)\s+to\s+(.+)$/i)
+    if (renameMatch) {
+      return `rename ${renameMatch[1]} to ${renameMatch[2]}`
+    }
+
+    const arrowMatch = normalized.match(/^(.+?)\s*(?:->|→)\s*(.+)$/)
+    if (arrowMatch) {
+      return `rename ${arrowMatch[1]} to ${arrowMatch[2]}`
+    }
+
+    return description
+  }
+
+  private shortenRenamePair(source: string, target: string): {
+    source: string
+    target: string
+  } {
+    const stripPrefix = (value: string) =>
+      value.replace(/^enable/i, '').replace(/^\W+/, '').trim() || value
+    return {
+      source: stripPrefix(source),
+      target: stripPrefix(target),
+    }
+  }
+
+  private buildRenameDescription(
+    description: string,
+    maxLength: number,
+    prefixLength: number
+  ): string {
+    const match = description.match(/^rename\s+(.+?)\s+to\s+(.+)$/i)
+    if (!match) {
+      return description
+    }
+
+    const rawSource = this.stripFilePaths(match[1]).trim()
+    const rawTarget = this.stripFilePaths(match[2]).trim()
+    if (!rawSource || !rawTarget) {
+      return description
+    }
+
+    const fullDescription = `rename ${rawSource} to ${rawTarget}`
+    if (prefixLength + fullDescription.length <= maxLength) {
+      return fullDescription
+    }
+
+    const arrowDescription = `rename ${rawSource} → ${rawTarget}`
+    if (prefixLength + arrowDescription.length <= maxLength) {
+      return arrowDescription
+    }
+
+    const shortened = this.shortenRenamePair(rawSource, rawTarget)
+    const shortenedDescription = `rename ${shortened.source} → ${shortened.target}`
+    if (prefixLength + shortenedDescription.length <= maxLength) {
+      return shortenedDescription
+    }
+
+    return `rename ${rawSource} → ${rawTarget}`
+  }
+
   private isVagueDescription(description: string): boolean {
     const tokens = description
       .split(/\s+/)
@@ -703,6 +668,9 @@ export class OpenAIService {
   }
 
   private buildBehaviorTemplateSubject(diff: ProcessedDiff): string | undefined {
+    if (!this.commitConfig.enableBehaviorTemplates) {
+      return undefined
+    }
     const paths = diff.signals?.topFiles?.length
       ? diff.signals.topFiles
       : diff.signals?.nameStatus?.map((entry) => entry.path) || []
@@ -712,18 +680,7 @@ export class OpenAIService {
       paths.length > 0 &&
       paths.every((path) => /^src\/translations\//.test(path))
     if (translationsOnly) {
-      return 'feat(translations): add integration browse message'
-    }
-
-    if (this.commitConfig.enableBrowseModeTemplate) {
-      const browseModeHints =
-        /Browse available integrations|Select leads first/i.test(snippets) ||
-        /connections\.length\s*===\s*0|rawConnections\.length\s*===\s*0/.test(
-          snippets
-        )
-      if (browseModeHints) {
-        return 'feat(integrations): support browse mode when no leads are selected'
-      }
+      return 'feat(translations): add new copy strings'
     }
 
     const loggingSwap =
@@ -752,6 +709,7 @@ export class OpenAIService {
 
     description = this.stripFilePaths(description)
     description = this.removeBannedWords(description)
+    description = this.normalizeRenameDescription(description)
     description = description.replace(/\s+/g, ' ').trim()
     description = description
       .replace(/\b(from|in|on|at|within|inside)\s*$/i, '')
@@ -771,8 +729,14 @@ export class OpenAIService {
       description = 'align commit flow'
     }
 
+    const prefix = `${type}${scope}: `
+    const renameDescription = this.buildRenameDescription(
+      description,
+      maxLength,
+      prefix.length
+    )
     const subject = this.truncateSubjectToMax(
-      `${type}${scope}: ${description}`,
+      `${type}${scope}: ${renameDescription}`,
       maxLength
     )
 
@@ -1018,12 +982,14 @@ export class OpenAIService {
       ? 'gpt-4o'
       : this.config.model
     const retryTemperature = Math.min(this.config.temperature, 0.1)
+    const internalChange = this.isInternalToolingChange(diff)
 
     let lastMessage: CommitMessage | undefined
     let lastErrors: string[] = []
 
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const isRetry = attempt === 1
+    const attemptOnce = async (
+      isRetry: boolean
+    ): Promise<{ message?: CommitMessage; errors?: string[] }> => {
       const model = isRetry ? retryModel : this.config.model
       const temperature = isRetry ? retryTemperature : this.config.temperature
       if (isRetry) {
@@ -1086,50 +1052,23 @@ export class OpenAIService {
       const rawContent = response.choices[0]?.message?.content || ''
       const content = rawContent.trim()
       const finishReason = response.choices[0]?.finish_reason
-    if (!content) {
-      if (isRetry) {
-        break
+      if (!content) {
+        return { errors: ['Empty response from model'] }
       }
-      if (lastMessage) {
-        break
+
+      if (isRetry && finishReason !== 'stop') {
+        return { errors: ['Retry did not finish successfully'] }
       }
-      throw new Error('No commit message generated')
-    }
 
-    if (isRetry && finishReason !== 'stop') {
-      break
-    }
+      const parsedMessage = this.parseCommitMessage(rawContent)
+      lastMessage = parsedMessage
 
-    const parsedMessage = this.parseCommitMessage(rawContent)
-    lastMessage = parsedMessage
-
-    const templateSubject = this.buildBehaviorTemplateSubject(diff)
-    if (
-      templateSubject &&
-      this.isValidSubject(templateSubject, this.commitConfig.maxTitleLength)
-    ) {
-      return { title: templateSubject, body: undefined }
-    }
-
-    const internalChange = this.isInternalToolingChange(diff)
-    const truncatedSubjectOnly: CommitMessage = {
-      title: this.truncateSubjectToMax(
-        parsedMessage.title,
-        this.commitConfig.maxTitleLength
-        ),
-        body: undefined,
-      }
-      const truncatedValidation = this.validateCommitMessage(
-        truncatedSubjectOnly,
-        {
-          maxTitleLength: this.commitConfig.maxTitleLength,
-          includeBodyMode: this.commitConfig.includeBody,
-          includeBodyAllowed,
-          internalChange,
-        }
-      )
-      if (truncatedValidation.valid) {
-        return truncatedSubjectOnly
+      const templateSubject = this.buildBehaviorTemplateSubject(diff)
+      if (
+        templateSubject &&
+        this.isValidSubject(templateSubject, this.commitConfig.maxTitleLength)
+      ) {
+        return { message: { title: templateSubject, body: undefined } }
       }
 
       const validation = this.validateCommitMessage(parsedMessage, {
@@ -1140,7 +1079,7 @@ export class OpenAIService {
       })
 
       if (validation.valid) {
-        return parsedMessage
+        return { message: parsedMessage }
       }
 
       const subjectOnly: CommitMessage = {
@@ -1154,71 +1093,44 @@ export class OpenAIService {
         internalChange,
       })
       if (subjectOnlyValidation.valid) {
-        return subjectOnly
+        return { message: subjectOnly }
       }
 
-      if (this.containsFilePathOrExtension(parsedMessage.title)) {
-        const repaired = this.repairSubject(diff, parsedMessage.title)
-        if (repaired) {
-          LoggerService.debug(
-            `Repaired subject locally: "${parsedMessage.title}" -> "${repaired}"`
-          )
-          return { title: repaired, body: undefined }
-        }
-      }
-
-      const { structural } = this.splitValidationErrors(validation.errors)
-    if (structural.length === 0) {
       const repaired = this.repairSubject(diff, parsedMessage.title)
       if (repaired) {
         LoggerService.debug(
           `Repaired subject locally: "${parsedMessage.title}" -> "${repaired}"`
         )
-        return { title: repaired, body: undefined }
+        return { message: { title: repaired, body: undefined } }
       }
+
+      return { errors: validation.errors }
+    }
+
+    const firstAttempt = await attemptOnce(false)
+    if (firstAttempt.message) {
+      return firstAttempt.message
+    }
+
+    lastErrors = firstAttempt.errors || []
+    const { structural } = this.splitValidationErrors(lastErrors)
+    const structuralFailure =
+      structural.length > 0 ||
+      lastErrors.some(
+        (error) =>
+          error.includes('Empty response') ||
+          error.includes('Retry did not finish')
+      )
+    if (!structuralFailure) {
       return {
-        title: this.buildSafeFallbackSubject(diff, parsedMessage.title),
+        title: this.buildSafeFallbackSubject(diff, lastMessage?.title),
         body: undefined,
       }
     }
 
-    const nonBodyErrors = validation.errors.filter(
-      (error) => !error.startsWith('Body ')
-    )
-      const onlyTooLong =
-        nonBodyErrors.length === 1 &&
-        nonBodyErrors[0]?.includes('exceeds')
-      if (onlyTooLong) {
-        const truncated = this.truncateSubjectToMax(
-          parsedMessage.title,
-          this.commitConfig.maxTitleLength
-        )
-        const truncatedSubject: CommitMessage = {
-          title: truncated,
-          body: undefined,
-        }
-        const onlyTooLongValidation = this.validateCommitMessage(
-          truncatedSubject,
-          {
-            maxTitleLength: this.commitConfig.maxTitleLength,
-            includeBodyMode: this.commitConfig.includeBody,
-            includeBodyAllowed,
-            internalChange,
-          }
-        )
-        if (onlyTooLongValidation.valid) {
-          return truncatedSubject
-        }
-        return {
-          title: this.buildSafeFallbackSubject(diff, parsedMessage.title),
-          body: undefined,
-        }
-      }
-
-      lastErrors = validation.errors
-      LoggerService.debug(
-        `Commit message validation failed: ${validation.errors.join('; ')}`
-      )
+    const secondAttempt = await attemptOnce(true)
+    if (secondAttempt.message) {
+      return secondAttempt.message
     }
 
     return {

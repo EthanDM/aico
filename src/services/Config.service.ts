@@ -30,7 +30,7 @@ class ConfigService {
       includeBody: 'auto',
       includeFooter: false,
       scopeRules: [],
-      enableBrowseModeTemplate: false,
+      enableBehaviorTemplates: false,
     },
     debug: {
       enabled: false,

@@ -27,7 +27,7 @@ export const ConfigSchema = z.object({
         })
       )
       .default([]),
-    enableBrowseModeTemplate: z.boolean().default(false),
+    enableBehaviorTemplates: z.boolean().default(false),
   }),
   debug: z.object({
     enabled: z.boolean().default(false),
