@@ -1,6 +1,12 @@
 import { SimpleGit, simpleGit } from 'simple-git'
 import DiffProcessor from '../processors/Diff.processor'
-import { ProcessedDiff, CommitMessage } from '../types'
+import {
+  ProcessedDiff,
+  CommitMessage,
+  NameStatusEntry,
+  NameStatusCode,
+  NumStatEntry,
+} from '../types'
 import LoggerService from './Logger.service'
 
 interface GitCommit {
@@ -117,6 +123,144 @@ class GitService {
     return this.git.diff(['--staged'])
   }
 
+  public async getStagedNameStatusRaw(): Promise<NameStatusEntry[]> {
+    const output = await this.git.raw(['diff', '--cached', '--name-status'])
+    const lines = output.split('\n').map((line) => line.trim()).filter(Boolean)
+
+    const entries: NameStatusEntry[] = []
+
+    for (const line of lines) {
+      const parts = line.split('\t').filter(Boolean)
+      if (parts.length === 0) continue
+
+      const statusRaw = parts[0]
+      const status = statusRaw[0] as NameStatusCode
+
+      if ((status === 'R' || status === 'C') && parts.length >= 3) {
+        entries.push({
+          status,
+          oldPath: parts[1],
+          path: parts[2],
+        })
+        continue
+      }
+
+      if (parts.length >= 2) {
+        entries.push({
+          status,
+          path: parts[1],
+        })
+        continue
+      }
+
+      const fallback = line.split(/\s+/)
+      if (fallback.length >= 2) {
+        entries.push({
+          status,
+          path: fallback[1],
+        })
+      }
+    }
+
+    return entries
+  }
+
+  private parseRenamePath(pathValue: string): { path: string; oldPath?: string } {
+    const renameMatch = pathValue.match(/^(.*)\{(.*) => (.*)\}(.*)$/)
+    if (renameMatch) {
+      const prefix = renameMatch[1]
+      const oldPart = renameMatch[2]
+      const newPart = renameMatch[3]
+      const suffix = renameMatch[4]
+      return {
+        oldPath: `${prefix}${oldPart}${suffix}`,
+        path: `${prefix}${newPart}${suffix}`,
+      }
+    }
+
+    return { path: pathValue }
+  }
+
+  public async getStagedNumStatRaw(): Promise<NumStatEntry[]> {
+    const output = await this.git.raw(['diff', '--cached', '--numstat'])
+    const lines = output.split('\n').map((line) => line.trim()).filter(Boolean)
+
+    const entries: NumStatEntry[] = []
+
+    for (const line of lines) {
+      const parts = line.split('\t')
+      if (parts.length < 3) continue
+
+      const insertionsRaw = parts[0]
+      const deletionsRaw = parts[1]
+      const pathParts = parts.slice(2)
+
+      const insertions =
+        insertionsRaw === '-' ? 0 : Number.parseInt(insertionsRaw, 10) || 0
+      const deletions =
+        deletionsRaw === '-' ? 0 : Number.parseInt(deletionsRaw, 10) || 0
+
+      if (pathParts.length >= 2) {
+        entries.push({
+          insertions,
+          deletions,
+          oldPath: pathParts[0],
+          path: pathParts[1],
+        })
+        continue
+      }
+
+      const pathValue = pathParts.join('\t')
+      const renameInfo = this.parseRenamePath(pathValue)
+      entries.push({
+        insertions,
+        deletions,
+        path: renameInfo.path,
+        oldPath: renameInfo.oldPath,
+      })
+    }
+
+    return entries
+  }
+
+  public async getStagedPatchForPaths(paths: string[]): Promise<string> {
+    if (paths.length === 0) {
+      return ''
+    }
+    return this.git.raw(['diff', '--cached', '--', ...paths])
+  }
+
+  private getTopFiles(
+    numStat: NumStatEntry[],
+    nameStatus: NameStatusEntry[]
+  ): string[] {
+    const candidates = numStat
+      .slice()
+      .sort(
+        (a, b) => b.insertions + b.deletions - (a.insertions + a.deletions)
+      )
+      .map((entry) => entry.path)
+
+    const unique = new Set<string>()
+    for (const path of candidates) {
+      if (DiffProcessor.isNoisyFile(path)) continue
+      if (DiffProcessor.isBinaryOrMediaFile(path)) continue
+      unique.add(path)
+      if (unique.size >= 5) break
+    }
+
+    if (unique.size === 0) {
+      for (const entry of nameStatus) {
+        if (DiffProcessor.isNoisyFile(entry.path)) continue
+        if (DiffProcessor.isBinaryOrMediaFile(entry.path)) continue
+        unique.add(entry.path)
+        if (unique.size >= 3) break
+      }
+    }
+
+    return Array.from(unique)
+  }
+
   /**
    * Gets the diff of all changes in the git repository.
    *
@@ -160,8 +304,30 @@ class GitService {
     isMerge: boolean = false,
     modelType: string = 'gpt-4o'
   ): Promise<ProcessedDiff> {
-    const diff = await this.getStagedDiff()
-    return DiffProcessor.processDiff(diff, isMerge, modelType)
+    const rawPatch = await this.getStagedDiff()
+    const nameStatus = await this.getStagedNameStatusRaw()
+    const numStat = await this.getStagedNumStatRaw()
+
+    const topFiles = this.getTopFiles(numStat, nameStatus)
+    const patchForTopFiles =
+      topFiles.length > 0 ? await this.getStagedPatchForPaths(topFiles) : rawPatch
+    const patchSnippets = DiffProcessor.extractPatchSnippets(patchForTopFiles, {
+      topFiles,
+      maxHunksPerFile: 2,
+      maxLinesPerHunk: 30,
+      maxCharsTotal: 12000,
+    })
+
+    return DiffProcessor.processDiffWithSignals(
+      rawPatch,
+      {
+        nameStatus,
+        numStat,
+        topFiles,
+        patchSnippets,
+      },
+      isMerge
+    )
   }
 
   /**
@@ -176,7 +342,7 @@ class GitService {
     modelType: string = 'gpt-4o'
   ): Promise<ProcessedDiff> {
     const diff = await this.getAllDiff()
-    return DiffProcessor.processDiff(diff, isMerge, modelType)
+    return DiffProcessor.processDiff(diff, isMerge)
   }
 
   /**

@@ -339,9 +339,9 @@ class UIService {
       }
 
       case 'diff':
-        const diff = await GitService.getStagedChanges()
+        const diff = await GitService.getStagedDiff()
         console.log('\nFull diff:')
-        console.log(diff.summary)
+        console.log(diff)
         return { result: 'repeat' }
 
       case 'cancel':

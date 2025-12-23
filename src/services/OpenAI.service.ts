@@ -8,6 +8,31 @@ import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 type OpenAIConfig = Config['openai']
 type CommitConfig = Config['commit']
 
+const PATH_SCOPE_MAP = [
+  { scope: 'services', match: /^src\/services\// },
+  { scope: 'processors', match: /^src\/processors\// },
+  { scope: 'constants', match: /^src\/constants\// },
+  { scope: 'types', match: /^src\/types\// },
+  { scope: 'cli', match: /^src\/cli\.ts$/ },
+  { scope: 'config', match: /^(config\.|\.config\.|tsconfig\.|package\.json)/ },
+]
+
+const SUBJECT_PATTERN =
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: .+$/
+
+const BANNED_SUBJECT_WORDS = [
+  'update',
+  'updates',
+  'updated',
+  'enhance',
+  'enhanced',
+  'improve',
+  'improved',
+  'misc',
+  'change',
+  'changes',
+]
+
 interface OpenAIOptions {
   context?: boolean | string
   noAutoStage?: boolean
@@ -210,9 +235,7 @@ export class OpenAIService {
     const errors: string[] = []
     const title = message.title.trim()
 
-    const subjectPattern =
-      /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: .+$/
-    if (!subjectPattern.test(title)) {
+    if (!SUBJECT_PATTERN.test(title)) {
       errors.push('Subject must follow Conventional Commits format')
     }
 
@@ -226,20 +249,8 @@ export class OpenAIService {
       errors.push('Subject must not include file paths or extensions')
     }
 
-    const bannedSubjectWords = [
-      'update',
-      'updates',
-      'updated',
-      'enhance',
-      'enhanced',
-      'improve',
-      'improved',
-      'misc',
-      'change',
-      'changes',
-    ]
     const bannedSubjectPattern = new RegExp(
-      `\\b(${bannedSubjectWords.join('|')})\\b`,
+      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
       'i'
     )
     if (bannedSubjectPattern.test(title)) {
@@ -345,9 +356,6 @@ export class OpenAIService {
       }
     }
 
-    // Process diff to remove binary content
-    const processedDiff = this.processDiffContent(diff)
-
     // Check if this is a merge commit
     const {
       isMerge: confirmed,
@@ -355,7 +363,7 @@ export class OpenAIService {
       sourceBranch,
       targetBranch,
     } = await this.detectMergeInfo(
-      processedDiff,
+      diff,
       userMessage,
       this.options.merge
     )
@@ -381,6 +389,8 @@ export class OpenAIService {
     } else if (!includeBodyAllowed) {
       parts.push('Return only the subject line.')
     }
+
+    parts.push(`Max subject length: ${this.commitConfig.maxTitleLength} characters.`)
 
     if (includeBodyMode === 'always') {
       const recentCommits = await GitService.getRecentCommits(5)
@@ -431,15 +441,57 @@ export class OpenAIService {
       }
     }
 
-    if (processedDiff.stats.wasSummarized) {
-      parts.push('Diff summary (summarized):')
-      parts.push(processedDiff.summary)
-      parts.push(
-        `Stats: ${processedDiff.stats.filesChanged} files, ${processedDiff.stats.additions} additions, ${processedDiff.stats.deletions} deletions`
-      )
-    } else {
-      parts.push('Diff summary:')
-      parts.push(processedDiff.summary)
+    const nameStatus = diff.signals?.nameStatus || []
+    const numStat = diff.signals?.numStat || []
+    const topFiles = diff.signals?.topFiles || []
+    const patchSnippets = diff.signals?.patchSnippets || []
+
+    const scopeHint = this.inferScopeFromPaths(
+      topFiles.length > 0
+        ? topFiles
+        : nameStatus.map((entry) => entry.path)
+    )
+    if (scopeHint) {
+      parts.push(`Scope hint: ${scopeHint}`)
+    }
+
+    if (nameStatus.length > 0) {
+      parts.push('Changes (name-status):')
+      nameStatus.forEach((entry) => {
+        if (entry.status === 'R' || entry.status === 'C') {
+          const oldPath = entry.oldPath || 'unknown'
+          parts.push(`- ${entry.status} ${oldPath} -> ${entry.path}`)
+        } else {
+          parts.push(`- ${entry.status} ${entry.path}`)
+        }
+      })
+    }
+
+    parts.push('Stats:')
+    parts.push(`- files: ${diff.stats.filesChanged}`)
+    parts.push(`- insertions: ${diff.stats.additions}`)
+    parts.push(`- deletions: ${diff.stats.deletions}`)
+
+    if (topFiles.length > 0) {
+      parts.push('Top changes:')
+      topFiles.forEach((path) => {
+        const stats = numStat.find((entry) => entry.path === path)
+        if (stats) {
+          parts.push(`- ${path} (+${stats.insertions}/-${stats.deletions})`)
+        } else {
+          parts.push(`- ${path}`)
+        }
+      })
+    }
+
+    if (patchSnippets.length > 0) {
+      parts.push('Top diffs (snippets):')
+      patchSnippets.slice(0, 3).forEach((snippet) => {
+        parts.push(snippet)
+      })
+    } else if (diff.summary) {
+      parts.push('Summary:')
+      parts.push(diff.summary)
     }
 
     return parts.join('\n')
@@ -460,6 +512,111 @@ export class OpenAIService {
         .toLowerCase()
       return match.replace(scope, kebabScope)
     })
+  }
+
+  private inferScopeFromPaths(paths: string[]): string | undefined {
+    const counts = new Map<string, number>()
+
+    for (const path of paths) {
+      for (const entry of PATH_SCOPE_MAP) {
+        if (entry.match.test(path)) {
+          counts.set(entry.scope, (counts.get(entry.scope) || 0) + 1)
+        }
+      }
+    }
+
+    const best = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]
+    return best?.[0]
+  }
+
+  private normalizeSubject(candidate: string): string {
+    return candidate.split('\n')[0]?.replace(/\s+/g, ' ').trim() || ''
+  }
+
+  private isValidSubject(subject: string, maxLength: number): boolean {
+    if (!subject || subject.length > maxLength) return false
+    if (!SUBJECT_PATTERN.test(subject)) return false
+    if (this.containsFilePathOrExtension(subject)) return false
+    const bannedSubjectPattern = new RegExp(
+      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
+      'i'
+    )
+    if (bannedSubjectPattern.test(subject)) return false
+    return true
+  }
+
+  private truncateSubjectToMax(subject: string, maxLength: number): string {
+    if (subject.length <= maxLength) return subject
+    const match = subject.match(
+      /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([^)]+\))?: (.+)$/
+    )
+    if (!match) {
+      return subject.slice(0, maxLength).trim()
+    }
+
+    const type = match[1]
+    const scope = match[2] || ''
+    const description = match[3]
+    const prefix = `${type}${scope}: `
+    const allowed = Math.max(0, maxLength - prefix.length)
+
+    if (allowed === 0) {
+      return `${type}: align commit flow`.slice(0, maxLength).trim()
+    }
+
+    const rawSlice = description.slice(0, allowed)
+    const lastSpaceIndex = rawSlice.lastIndexOf(' ')
+    const candidate =
+      lastSpaceIndex > 0 ? rawSlice.slice(0, lastSpaceIndex).trim() : rawSlice.trim()
+    const cleaned = candidate.replace(/[-:,.]+$/, '').trim()
+    return `${prefix}${cleaned}`.trim()
+  }
+
+  private buildSafeFallbackSubject(
+    diff: ProcessedDiff,
+    candidate?: string
+  ): string {
+    const maxLength = this.commitConfig.maxTitleLength
+    const candidateSubject = candidate
+      ? this.normalizeSubject(candidate)
+      : ''
+
+    if (this.isValidSubject(candidateSubject, maxLength)) {
+      return candidateSubject
+    }
+
+    const truncatedCandidate = this.truncateSubjectToMax(
+      candidateSubject,
+      maxLength
+    )
+    if (this.isValidSubject(truncatedCandidate, maxLength)) {
+      return truncatedCandidate
+    }
+
+    const scopeHint = this.inferScopeFromPaths(
+      diff.signals?.topFiles?.length
+        ? diff.signals.topFiles
+        : diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    )
+
+    const baseDescription = 'align commit flow'
+    const preferredType = scopeHint ? 'refactor' : 'chore'
+    const scoped = scopeHint
+      ? `${preferredType}(${scopeHint}): ${baseDescription}`
+      : `${preferredType}: ${baseDescription}`
+
+    const scopedTruncated = this.truncateSubjectToMax(scoped, maxLength)
+    if (this.isValidSubject(scopedTruncated, maxLength)) {
+      return scopedTruncated
+    }
+
+    const fallback = `chore: ${baseDescription}`
+    const fallbackTruncated = this.truncateSubjectToMax(fallback, maxLength)
+    if (this.isValidSubject(fallbackTruncated, maxLength)) {
+      return fallbackTruncated
+    }
+
+    return 'chore: align commit flow'
   }
 
   /**
@@ -602,7 +759,7 @@ export class OpenAIService {
     ]
 
     const retryModel = this.config.model.includes('mini')
-      ? 'gpt-5-mini'
+      ? 'gpt-4o'
       : this.config.model
     const retryTemperature = Math.min(this.config.temperature, 0.1)
 
@@ -613,21 +770,33 @@ export class OpenAIService {
       const isRetry = attempt === 1
       const model = isRetry ? retryModel : this.config.model
       const temperature = isRetry ? retryTemperature : this.config.temperature
-      const messages = isRetry
+      if (isRetry) {
+        LoggerService.debug(
+          `Retrying with ${model} due to validation failures: ${lastErrors.join(
+            '; '
+          )}`
+        )
+      }
+
+      const messages: ChatCompletionMessageParam[] = isRetry
         ? [
             baseMessages[0],
             {
               role: 'user',
               content:
-                prompt +
-                `\nRepair these violations:\n- ${lastErrors.join('\n- ')}\nReturn only the corrected commit message.`,
-            },
+                `${prompt}\nPrevious output:\n${lastMessage?.title ?? ''}\n` +
+                (lastMessage?.body ? `${lastMessage.body}\n` : '') +
+                `Violations:\n- ${lastErrors.join('\n- ')}\nReturn only the corrected commit message.`,
+            } as ChatCompletionMessageParam,
           ]
         : baseMessages
 
       LoggerService.debug('\n🔍 Building OpenAI Request:')
       LoggerService.debug(`Model: ${model}`)
-      LoggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
+      const maxCompletionTokens = isRetry
+        ? Math.max(this.config.maxTokens, 350)
+        : this.config.maxTokens
+      LoggerService.debug(`Max Tokens: ${maxCompletionTokens}`)
       LoggerService.debug(`Temperature: ${temperature}`)
       LoggerService.debug('Messages:')
       LoggerService.debug(`system: ${messages[0].content}`)
@@ -635,28 +804,67 @@ export class OpenAIService {
 
       LoggerService.debug('\n📤 Sending request to OpenAI...')
 
-      const response = await this.client.chat.completions.create({
+      const requestBody: OpenAI.ChatCompletionCreateParamsNonStreaming = {
         model,
         messages,
-        max_tokens: this.config.maxTokens,
-        temperature,
-        top_p: this.config.topP,
-        frequency_penalty: this.config.frequencyPenalty,
-        presence_penalty: this.config.presencePenalty,
-      })
+        max_completion_tokens: maxCompletionTokens,
+      }
+
+      if (!model.startsWith('gpt-5')) {
+        requestBody.temperature = temperature
+        requestBody.top_p = this.config.topP
+        requestBody.frequency_penalty = this.config.frequencyPenalty
+        requestBody.presence_penalty = this.config.presencePenalty
+      }
+
+      const response = await this.client.chat.completions.create(requestBody)
 
       LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
+      LoggerService.debug(
+        `Finish reason: ${response.choices[0]?.finish_reason}`
+      )
 
       LoggerService.debug('\n📥 Received response from OpenAI:')
       LoggerService.debug(JSON.stringify(response, null, 2))
 
-      const content = response.choices[0]?.message?.content
+      const rawContent = response.choices[0]?.message?.content || ''
+      const content = rawContent.trim()
+      const finishReason = response.choices[0]?.finish_reason
       if (!content) {
+        if (isRetry) {
+          break
+        }
+        if (lastMessage) {
+          break
+        }
         throw new Error('No commit message generated')
       }
 
-      const parsedMessage = this.parseCommitMessage(content)
+      if (isRetry && finishReason !== 'stop') {
+        break
+      }
+
+      const parsedMessage = this.parseCommitMessage(rawContent)
       lastMessage = parsedMessage
+
+      const truncatedSubjectOnly: CommitMessage = {
+        title: this.truncateSubjectToMax(
+          parsedMessage.title,
+          this.commitConfig.maxTitleLength
+        ),
+        body: undefined,
+      }
+      const truncatedValidation = this.validateCommitMessage(
+        truncatedSubjectOnly,
+        {
+          maxTitleLength: this.commitConfig.maxTitleLength,
+          includeBodyMode: this.commitConfig.includeBody,
+          includeBodyAllowed,
+        }
+      )
+      if (truncatedValidation.valid) {
+        return truncatedSubjectOnly
+      }
 
       const validation = this.validateCommitMessage(parsedMessage, {
         maxTitleLength: this.commitConfig.maxTitleLength,
@@ -668,6 +876,51 @@ export class OpenAIService {
         return parsedMessage
       }
 
+      const subjectOnly: CommitMessage = {
+        title: parsedMessage.title,
+        body: undefined,
+      }
+      const subjectOnlyValidation = this.validateCommitMessage(subjectOnly, {
+        maxTitleLength: this.commitConfig.maxTitleLength,
+        includeBodyMode: this.commitConfig.includeBody,
+        includeBodyAllowed,
+      })
+      if (subjectOnlyValidation.valid) {
+        return subjectOnly
+      }
+
+      const nonBodyErrors = validation.errors.filter(
+        (error) => !error.startsWith('Body ')
+      )
+      const onlyTooLong =
+        nonBodyErrors.length === 1 &&
+        nonBodyErrors[0]?.includes('exceeds')
+      if (onlyTooLong) {
+        const truncated = this.truncateSubjectToMax(
+          parsedMessage.title,
+          this.commitConfig.maxTitleLength
+        )
+        const truncatedSubject: CommitMessage = {
+          title: truncated,
+          body: undefined,
+        }
+        const onlyTooLongValidation = this.validateCommitMessage(
+          truncatedSubject,
+          {
+            maxTitleLength: this.commitConfig.maxTitleLength,
+            includeBodyMode: this.commitConfig.includeBody,
+            includeBodyAllowed,
+          }
+        )
+        if (onlyTooLongValidation.valid) {
+          return truncatedSubject
+        }
+        return {
+          title: this.buildSafeFallbackSubject(diff, parsedMessage.title),
+          body: undefined,
+        }
+      }
+
       lastErrors = validation.errors
       LoggerService.debug(
         `Commit message validation failed: ${validation.errors.join('; ')}`
@@ -675,7 +928,7 @@ export class OpenAIService {
     }
 
     return {
-      title: lastMessage?.title?.trim() || 'chore: apply changes',
+      title: this.buildSafeFallbackSubject(diff, lastMessage?.title),
       body: undefined,
     }
   }
@@ -712,7 +965,7 @@ Follow these strict branch naming rules:
 - Use clear, meaningful terms
 - No special characters except hyphens and forward slashes
 
-IMPORTANT: 
+IMPORTANT:
 1. Respond ONLY with the branch name, nothing else
 2. Keep names SHORT - if you can say it in fewer words, do it
 3. Remove any implementation details or technical context
@@ -740,11 +993,15 @@ Examples of bad branch names:
       const completion = await this.client.chat.completions.create({
         model: this.config.model,
         messages,
-        temperature: 0.3, // Lower temperature for more focused names
-        max_tokens: 60,
-        top_p: this.config.topP,
-        frequency_penalty: this.config.frequencyPenalty,
-        presence_penalty: this.config.presencePenalty,
+        max_completion_tokens: 60,
+        ...(this.config.model.startsWith('gpt-5')
+          ? {}
+          : {
+            temperature: 0.3,
+            top_p: this.config.topP,
+            frequency_penalty: this.config.frequencyPenalty,
+            presence_penalty: this.config.presencePenalty,
+          }),
       })
 
       const response = completion.choices[0]?.message?.content?.trim() || ''

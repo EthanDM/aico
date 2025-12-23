@@ -31,6 +31,27 @@ export const ConfigSchema = z.object({
  */
 export type Config = z.infer<typeof ConfigSchema>
 
+export type ConfigOverrides = {
+  openai?: Partial<Config['openai']>
+  commit?: Partial<Config['commit']>
+  debug?: Partial<Config['debug']>
+}
+
+export type NameStatusCode = 'A' | 'M' | 'D' | 'R' | 'C'
+
+export interface NameStatusEntry {
+  status: NameStatusCode
+  path: string
+  oldPath?: string
+}
+
+export interface NumStatEntry {
+  insertions: number
+  deletions: number
+  path: string
+  oldPath?: string
+}
+
 /**
  * Interface for the GitDiff type.
  */
@@ -59,6 +80,12 @@ export interface ProcessedDiff {
     deletions: number
     wasSummarized: boolean
     qualityIndicator?: string
+  }
+  signals?: {
+    nameStatus: NameStatusEntry[]
+    numStat: NumStatEntry[]
+    topFiles: string[]
+    patchSnippets: string[]
   }
   isMerge?: boolean
 }

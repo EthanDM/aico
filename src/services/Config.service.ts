@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { Config, ConfigSchema } from '../types'
+import { Config, ConfigOverrides, ConfigSchema } from '../types'
 import LoggerService from './Logger.service'
 
 /**
@@ -77,7 +77,7 @@ class ConfigService {
     return result as T
   }
 
-  private static migrateConfig(config: Partial<Config>): Partial<Config> {
+  private static migrateConfig(config: ConfigOverrides): ConfigOverrides {
     const includeBody = config.commit?.includeBody
     if (typeof includeBody === 'boolean') {
       return {
@@ -95,7 +95,7 @@ class ConfigService {
   /**
    * Loads the user configuration if it exists
    */
-  public static loadConfig(): Partial<Config> {
+  public static loadConfig(): ConfigOverrides {
     try {
       if (fs.existsSync(ConfigService.CONFIG_FILE)) {
         const configStr = fs.readFileSync(ConfigService.CONFIG_FILE, 'utf8')
@@ -112,12 +112,12 @@ class ConfigService {
   /**
    * Loads, migrates, deep-merges, and validates configuration.
    */
-  public static getConfig(overrides: Partial<Config> = {}): Config {
+  public static getConfig(overrides: ConfigOverrides = {}): Config {
     const savedConfig = ConfigService.loadConfig()
     const merged = ConfigService.deepMerge<Config>(
       ConfigService.DEFAULT_CONFIG,
-      savedConfig,
-      overrides
+      savedConfig as Partial<Config>,
+      overrides as Partial<Config>
     )
 
     return ConfigSchema.parse(merged)
@@ -126,11 +126,14 @@ class ConfigService {
   /**
    * Saves the configuration to disk
    */
-  public static saveConfig(config: Partial<Config>): void {
+  public static saveConfig(config: ConfigOverrides): void {
     try {
       ConfigService.ensureConfigDir()
       const existingConfig = ConfigService.loadConfig()
-      const newConfig = ConfigService.deepMerge(existingConfig, config)
+      const newConfig = ConfigService.deepMerge(
+        existingConfig as Partial<Config>,
+        config as Partial<Config>
+      )
       fs.writeFileSync(
         ConfigService.CONFIG_FILE,
         JSON.stringify(newConfig, null, 2)
@@ -151,7 +154,7 @@ class ConfigService {
     }
 
     const existingConfig = ConfigService.loadConfig()
-    const config: Partial<Config> = {
+    const config: ConfigOverrides = {
       openai: {
         ...existingConfig.openai,
         model,
@@ -171,7 +174,7 @@ class ConfigService {
     }
 
     const existingConfig = ConfigService.loadConfig()
-    const config: Partial<Config> = {
+    const config: ConfigOverrides = {
       openai: {
         ...existingConfig.openai,
         apiKey,

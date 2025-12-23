@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { Config } from '../types/index'
+import { Config, ConfigOverrides } from '../types/index'
 import LoggerService from './Logger.service'
 import AppLogService from './AppLog.service'
 import ConfigService from './Config.service'
@@ -124,7 +124,7 @@ class ProgramService {
 
     // Initialize configuration
     try {
-      const overrides: Partial<Config> = {
+      const overrides: ConfigOverrides = {
         openai: {
           ...(process.env.OPENAI_KEY
             ? { apiKey: process.env.OPENAI_KEY }
