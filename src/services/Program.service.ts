@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { Config, ConfigSchema } from '../types/index'
+import { Config, ConfigOverrides } from '../types/index'
 import LoggerService from './Logger.service'
 import AppLogService from './AppLog.service'
 import ConfigService from './Config.service'
@@ -28,32 +28,6 @@ export interface ProgramOptions {
    * Whether to generate a branch name instead of a commit message
    */
   branch?: boolean
-}
-
-/**
- * Default configuration for the program.
- */
-const defaultConfig: Config = {
-  openai: {
-    apiKey: process.env.OPENAI_KEY || '',
-    model: 'gpt-4o-mini',
-    maxTokens: 200,
-    temperature: 0.3,
-    topP: 0.9,
-    frequencyPenalty: 0.1,
-    presencePenalty: 0,
-  },
-  commit: {
-    maxTitleLength: 50,
-    maxBodyLength: 200,
-    wrapBody: 72,
-    includeBody: true,
-    includeFooter: false,
-  },
-  debug: {
-    enabled: false,
-    logLevel: 'INFO',
-  },
 }
 
 /**
@@ -148,39 +122,31 @@ class ProgramService {
       process.exit(0)
     }
 
-    // Load saved config and check for API key
-    const savedConfig = ConfigService.loadConfig()
-    const apiKey = process.env.OPENAI_KEY || savedConfig.openai?.apiKey
-
-    // Validate API key
-    if (!apiKey) {
-      LoggerService.error('OpenAI API key not found!')
-      LoggerService.info('\nYou can set your API key in one of two ways:')
-      LoggerService.info('1. Run: aico --set-api-key YOUR_API_KEY')
-      LoggerService.info('2. Set the OPENAI_KEY environment variable')
-      throw new Error('OpenAI API key is required')
-    }
-
     // Initialize configuration
     try {
-      const config = ConfigSchema.parse({
-        ...defaultConfig,
-        ...savedConfig,
+      const overrides: ConfigOverrides = {
         openai: {
-          ...defaultConfig.openai,
-          ...savedConfig.openai,
-          apiKey, // Use environment variable or saved key
-          // Override with full model if requested
-          model: options.full
-            ? 'gpt-4o'
-            : savedConfig.openai?.model || defaultConfig.openai.model,
+          ...(process.env.OPENAI_KEY
+            ? { apiKey: process.env.OPENAI_KEY }
+            : {}),
+          ...(options.full ? { model: 'gpt-4o' } : {}),
         },
         debug: {
-          ...defaultConfig.debug,
-          enabled: options.debug,
-          logLevel: options.debug ? 'DEBUG' : defaultConfig.debug.logLevel,
+          enabled: options.debug || false,
+          logLevel: options.debug ? 'DEBUG' : 'INFO',
         },
-      })
+      }
+
+      const config = ConfigService.getConfig(overrides)
+
+      // Validate API key
+      if (!config.openai.apiKey) {
+        LoggerService.error('OpenAI API key not found!')
+        LoggerService.info('\nYou can set your API key in one of two ways:')
+        LoggerService.info('1. Run: aico --set-api-key YOUR_API_KEY')
+        LoggerService.info('2. Set the OPENAI_KEY environment variable')
+        throw new Error('OpenAI API key is required')
+      }
 
       // Configure logger
       LoggerService.setConfig(config.debug)

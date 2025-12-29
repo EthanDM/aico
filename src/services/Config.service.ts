@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { Config, ConfigSchema } from '../types'
+import { Config, ConfigOverrides, ConfigSchema } from '../types'
 import LoggerService from './Logger.service'
 
 /**
@@ -13,6 +13,30 @@ class ConfigService {
     ConfigService.CONFIG_DIR,
     'config.json'
   )
+  private static DEFAULT_CONFIG: Config = {
+    openai: {
+      apiKey: process.env.OPENAI_KEY || '',
+      model: 'gpt-4o-mini',
+      maxTokens: 200,
+      temperature: 0.3,
+      topP: 0.9,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+    },
+    commit: {
+      maxTitleLength: 72,
+      maxBodyLength: 200,
+      wrapBody: 72,
+      includeBody: 'auto',
+      includeFooter: false,
+      scopeRules: [],
+      enableBehaviorTemplates: false,
+    },
+    debug: {
+      enabled: false,
+      logLevel: 'INFO',
+    },
+  }
 
   /**
    * Ensures the config directory exists
@@ -23,15 +47,62 @@ class ConfigService {
     }
   }
 
+  private static isPlainObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+  }
+
+  private static deepMerge<T>(...objects: Partial<T>[]): T {
+    const result: Record<string, unknown> = {}
+
+    for (const obj of objects) {
+      if (!obj) continue
+      for (const [key, value] of Object.entries(obj)) {
+        if (value === undefined) {
+          continue
+        }
+
+        if (
+          ConfigService.isPlainObject(value) &&
+          ConfigService.isPlainObject(result[key])
+        ) {
+          result[key] = ConfigService.deepMerge(
+            result[key] as Record<string, unknown>,
+            value as Record<string, unknown>
+          )
+          continue
+        }
+
+        result[key] = value
+      }
+    }
+
+    return result as T
+  }
+
+  private static migrateConfig(config: ConfigOverrides): ConfigOverrides {
+    const includeBody = config.commit?.includeBody
+    if (typeof includeBody === 'boolean') {
+      return {
+        ...config,
+        commit: {
+          ...config.commit,
+          includeBody: includeBody ? 'always' : 'never',
+        },
+      }
+    }
+
+    return config
+  }
+
   /**
    * Loads the user configuration if it exists
    */
-  public static loadConfig(): Partial<Config> {
+  public static loadConfig(): ConfigOverrides {
     try {
       if (fs.existsSync(ConfigService.CONFIG_FILE)) {
         const configStr = fs.readFileSync(ConfigService.CONFIG_FILE, 'utf8')
         const config = JSON.parse(configStr)
-        return config
+        return ConfigService.migrateConfig(config)
       }
     } catch (error) {
       LoggerService.warn('Failed to load config file, using defaults')
@@ -41,13 +112,30 @@ class ConfigService {
   }
 
   /**
+   * Loads, migrates, deep-merges, and validates configuration.
+   */
+  public static getConfig(overrides: ConfigOverrides = {}): Config {
+    const savedConfig = ConfigService.loadConfig()
+    const merged = ConfigService.deepMerge<Config>(
+      ConfigService.DEFAULT_CONFIG,
+      savedConfig as Partial<Config>,
+      overrides as Partial<Config>
+    )
+
+    return ConfigSchema.parse(merged)
+  }
+
+  /**
    * Saves the configuration to disk
    */
-  public static saveConfig(config: Partial<Config>): void {
+  public static saveConfig(config: ConfigOverrides): void {
     try {
       ConfigService.ensureConfigDir()
       const existingConfig = ConfigService.loadConfig()
-      const newConfig = { ...existingConfig, ...config }
+      const newConfig = ConfigService.deepMerge(
+        existingConfig as Partial<Config>,
+        config as Partial<Config>
+      )
       fs.writeFileSync(
         ConfigService.CONFIG_FILE,
         JSON.stringify(newConfig, null, 2)
@@ -68,7 +156,7 @@ class ConfigService {
     }
 
     const existingConfig = ConfigService.loadConfig()
-    const config: Partial<Config> = {
+    const config: ConfigOverrides = {
       openai: {
         ...existingConfig.openai,
         model,
@@ -88,7 +176,7 @@ class ConfigService {
     }
 
     const existingConfig = ConfigService.loadConfig()
-    const config: Partial<Config> = {
+    const config: ConfigOverrides = {
       openai: {
         ...existingConfig.openai,
         apiKey,

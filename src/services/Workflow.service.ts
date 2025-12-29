@@ -37,7 +37,7 @@ class WorkflowService {
       this.options.context = true // Enable context mode
     }
 
-    this.openai = createOpenAIService(config.openai, this.options)
+    this.openai = createOpenAIService(config, this.options)
   }
 
   /**
@@ -99,6 +99,12 @@ class WorkflowService {
       if (!shouldProceed) {
         throw new Error('Operation cancelled')
       }
+    }
+
+    const isMerge =
+      this.options.merge || (await GitService.isMergingBranch())
+    if (isMerge) {
+      return GitService.buildMergeCommitMessage()
     }
 
     // Get the staged changes after staging is handled
@@ -183,56 +189,61 @@ class WorkflowService {
    * @returns The generated branch name
    */
   public async generateBranchName(currentContext?: string): Promise<string> {
-    // Get context for branch name - use provided context, passed context, or prompt for it
     let context = currentContext || this.providedContext
-    if (!context) {
-      context = await this.promptForContext(true)
-    }
 
-    if (!context) {
-      throw new Error('Context is required for branch name generation')
-    }
-
-    let diff: ProcessedDiff | undefined
-
-    try {
-      // If there are staged changes, include them in the context
-      const { stagedCount } = await GitService.getChangeCount()
-      if (stagedCount > 0) {
-        diff = await GitService.getStagedChanges(
-          false,
-          this.config.openai.model
-        )
-        AppLogService.gitStats(diff)
+    while (true) {
+      // Get context for branch name - use provided context, passed context, or prompt for it
+      if (!context) {
+        context = await this.promptForContext(true)
       }
-    } catch (error) {
-      // Ignore Git errors - we don't require changes for branch names
-      LoggerService.debug(
-        'No Git repository or changes detected, proceeding with context only'
+
+      if (!context) {
+        throw new Error('Context is required for branch name generation')
+      }
+
+      let diff: ProcessedDiff | undefined
+
+      try {
+        // If there are staged changes, include them in the context
+        const { stagedCount } = await GitService.getChangeCount()
+        if (stagedCount > 0) {
+          diff = await GitService.getStagedChanges(
+            false,
+            this.config.openai.model
+          )
+          AppLogService.gitStats(diff)
+        }
+      } catch (error) {
+        // Ignore Git errors - we don't require changes for branch names
+        LoggerService.debug(
+          'No Git repository or changes detected, proceeding with context only'
+        )
+      }
+
+      LoggerService.info('\n🌿 Generating branch name...')
+      const branchName = await this.openai.generateBranchName(context, diff)
+
+      console.log('\n🎯 Generated branch name:')
+      console.log(chalk.green(branchName))
+
+      // Handle user actions for the branch name
+      const action = await uiService.promptForBranchAction()
+      const { result, newContext } = await uiService.handleBranchAction(
+        action,
+        branchName
       )
+
+      if (result === 'restart') {
+        context = newContext
+        continue
+      }
+
+      if (result === 'exit') {
+        return ''
+      }
+
+      return branchName
     }
-
-    LoggerService.info('\n🌿 Generating branch name...')
-    const branchName = await this.openai.generateBranchName(context, diff)
-
-    console.log('\n🎯 Generated branch name:')
-    console.log(chalk.green(branchName))
-
-    // Handle user actions for the branch name
-    const action = await uiService.promptForBranchAction()
-    const { result, newContext } = await uiService.handleBranchAction(
-      action,
-      branchName
-    )
-
-    if (result === 'restart') {
-      // Regenerate with new context
-      return this.generateBranchName(newContext)
-    } else if (result === 'exit') {
-      process.exit(0)
-    }
-
-    return branchName
   }
 
   /**
@@ -246,8 +257,9 @@ class WorkflowService {
     message: CommitMessage,
     currentContext?: string
   ): Promise<'exit' | 'restart' | void> {
+    const action = await uiService.promptForAction(message)
     const { result, newContext } = await uiService.handleAction(
-      await uiService.promptForAction(),
+      action,
       message,
       currentContext
     )
@@ -256,6 +268,10 @@ class WorkflowService {
       // Generate a new message with potentially updated context
       const newMessage = await this.generateCommitMessage()
       return this.promptForAction(newMessage, newContext)
+    }
+
+    if (result === 'repeat') {
+      return this.promptForAction(message, currentContext)
     }
 
     return result

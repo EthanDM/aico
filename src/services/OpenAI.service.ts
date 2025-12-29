@@ -6,6 +6,88 @@ import GitService from './Git.service'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 
 type OpenAIConfig = Config['openai']
+type CommitConfig = Config['commit']
+
+const SUBJECT_PATTERN =
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: .+$/
+
+const SUBJECT_PARSE_PATTERN =
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: (.+)$/
+
+const BANNED_SUBJECT_WORDS = [
+  'update',
+  'updates',
+  'updated',
+  'enhance',
+  'enhanced',
+  'improve',
+  'improved',
+  'misc',
+  'changes',
+]
+
+const VAGUE_SUBJECT_PATTERNS = [
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: changes$/i,
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: minor changes$/i,
+  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: various changes$/i,
+]
+
+const VAGUE_DESCRIPTION_WORDS = [
+  'handling',
+  'logic',
+  'process',
+  'stuff',
+  'various',
+]
+
+const TRAILING_STOP_WORDS = [
+  'and',
+  'or',
+  'with',
+  'for',
+  'to',
+  'in',
+  'on',
+  'at',
+  'from',
+  'into',
+  'by',
+]
+
+const TASTE_VERB_REWRITES: Array<[RegExp, string]> = [
+  [/\badjust\b/gi, 'refine'],
+  [/\btweak\b/gi, 'refine'],
+  [/\bimprove\b/gi, 'tighten'],
+]
+
+const TASTE_PHRASE_REWRITES: Array<[RegExp, string]> = [
+  [/\badjust\s+(.+?)\s+behavior\b/gi, 'refine $1'],
+  [/\badjust\s+(.+?)\s+parameters\b/gi, 'refine $1'],
+  [/\badd\s+(.+?)\s+logic\b/gi, 'add $1'],
+  [/\badd\s+(.+?)\s+handling\b/gi, 'support $1'],
+  [/\bupdate\s+(.+?)\s+handling\b/gi, 'refine $1'],
+]
+
+const PREFERRED_VERBS = [
+  'refine',
+  'tighten',
+  'harden',
+  'clarify',
+  'standardize',
+  'rename',
+  'remove',
+  'support',
+  'detect',
+  'prevent',
+]
+
+const DISCOURAGED_VERBS = [
+  'implement',
+  'adjust',
+  'handle',
+  'process',
+  'manage',
+]
 
 interface OpenAIOptions {
   context?: boolean | string
@@ -19,11 +101,13 @@ interface OpenAIOptions {
 export class OpenAIService {
   private client: OpenAI
   private config: OpenAIConfig
+  private commitConfig: CommitConfig
   private options: OpenAIOptions
 
-  constructor(config: OpenAIConfig, options: OpenAIOptions) {
-    this.config = config
-    this.client = new OpenAI({ apiKey: config.apiKey })
+  constructor(config: Config, options: OpenAIOptions) {
+    this.config = config.openai
+    this.commitConfig = config.commit
+    this.client = new OpenAI({ apiKey: this.config.apiKey })
     this.options = options
   }
 
@@ -71,102 +155,200 @@ export class OpenAIService {
     return { isMerge, mergeInfo, sourceBranch, targetBranch }
   }
 
-  /**
-   * Checks if a file appears to be binary/media content.
-   *
-   * @param filename - The filename to check
-   * @returns True if the file appears to be binary/media
-   */
-  private isBinaryOrMediaFile(filename: string): boolean {
-    const binaryExtensions = [
-      // Video
-      'mp4',
-      'mov',
-      'avi',
-      'mkv',
-      'wmv',
-      // Images
-      'png',
-      'jpg',
-      'jpeg',
-      'gif',
-      'bmp',
-      'ico',
-      'svg',
-      'webp',
-      // Audio
-      'mp3',
-      'wav',
-      'ogg',
-      'm4a',
-      // Documents
-      'pdf',
-      'doc',
-      'docx',
-      'xls',
-      'xlsx',
-      'ppt',
-      'pptx',
-      // Archives
-      'zip',
-      'rar',
-      'tar',
-      'gz',
-      '7z',
-      // Other binaries
-      'exe',
-      'dll',
-      'so',
-      'dylib',
-      'bin',
-      // Font files
-      'ttf',
-      'otf',
-      'woff',
-      'woff2',
-    ]
-    const ext = filename.split('.').pop()?.toLowerCase()
-    return ext ? binaryExtensions.includes(ext) : false
+
+  private shouldIncludeBody(
+    mode: CommitConfig['includeBody'],
+    stats: ProcessedDiff['stats'],
+    userMessage?: string
+  ): boolean {
+    if (mode === 'always') {
+      return true
+    }
+    if (mode === 'never') {
+      return false
+    }
+
+    const linesChanged = stats.additions + stats.deletions
+    const hasUserContext = Boolean(userMessage && userMessage.trim())
+    return (
+      stats.filesChanged >= 4 || linesChanged >= 150 || hasUserContext
+    )
   }
 
-  /**
-   * Filters and processes the diff summary to exclude binary/media content.
-   *
-   * @param diff - The original diff
-   * @returns Processed diff with binary content removed
-   */
-  private processDiffContent(diff: ProcessedDiff): ProcessedDiff {
-    const lines = diff.summary.split('\n')
-    const filteredLines: string[] = []
-    let skipCurrentFile = false
-
-    for (const line of lines) {
-      // Check for file headers in diff
-      if (line.startsWith('diff --git')) {
-        const filename = line.split(' ').pop()?.replace('b/', '') ?? ''
-        skipCurrentFile = this.isBinaryOrMediaFile(filename)
-        if (skipCurrentFile) {
-          filteredLines.push(`Skipped binary/media file: ${filename}`)
-          continue
-        }
-      }
-
-      // Skip lines if we're in a binary file section
-      if (skipCurrentFile) {
-        if (line.startsWith('diff --git')) {
-          skipCurrentFile = false // Reset for next file
-        } else {
-          continue
-        }
-      }
-
-      filteredLines.push(line)
+  private isInternalToolingChange(diff: ProcessedDiff): boolean {
+    const paths = diff.signals?.topFiles?.length
+      ? diff.signals.topFiles
+      : diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    if (paths.length === 0) {
+      return false
     }
 
-    return {
-      ...diff,
-      summary: filteredLines.join('\n'),
+    const internalPrefixes = [
+      'src/services/',
+      'src/processors/',
+      'src/types/',
+      'src/constants/',
+    ]
+    const userFacingHints = ['src/cli.ts', 'src/cli/']
+
+    const hasUserFacingHint = paths.some((path) =>
+      userFacingHints.some((hint) => path.startsWith(hint))
+    )
+    if (hasUserFacingHint) {
+      return false
     }
+
+    const internalCount = paths.filter((path) =>
+      internalPrefixes.some((prefix) => path.startsWith(prefix))
+    ).length
+
+    return internalCount / paths.length >= 0.5
+  }
+
+  private isDocsOnlyChange(diff: ProcessedDiff): boolean {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    if (paths.length === 0) {
+      return false
+    }
+
+    return paths.every((path) => {
+      if (path === 'README.md') return true
+      if (/^docs\//.test(path)) return true
+      if (/\.md$/i.test(path)) return true
+      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
+      return false
+    })
+  }
+
+  private isDocsTouched(diff: ProcessedDiff): boolean {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    return paths.some((path) => {
+      if (path === 'README.md') return true
+      if (/^docs\//.test(path)) return true
+      if (/\.md$/i.test(path)) return true
+      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
+      return false
+    })
+  }
+
+  private getDocsTouchedList(diff: ProcessedDiff): string[] {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    return paths.filter((path) => {
+      if (path === 'README.md') return true
+      if (/^docs\//.test(path)) return true
+      if (/\.md$/i.test(path)) return true
+      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
+      return false
+    })
+  }
+
+  private getDocsScope(diff: ProcessedDiff): string {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    if (paths.some((path) => path === 'README.md')) {
+      return 'readme'
+    }
+    return 'docs'
+  }
+
+  private containsFilePathOrExtension(text: string): boolean {
+    const hasPath =
+      /[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/.test(text) ||
+      /[A-Za-z0-9._-]+\\[A-Za-z0-9._\\-]+/.test(text)
+    const hasExtension = /\b[\w-]+\.[a-z][a-z0-9]{1,4}\b/i.test(text)
+    return hasPath || hasExtension
+  }
+
+  private validateCommitMessage(
+    message: CommitMessage,
+    options: {
+      maxTitleLength: number
+      includeBodyMode: CommitConfig['includeBody']
+      includeBodyAllowed: boolean
+      internalChange?: boolean
+      docsOnly?: boolean
+    }
+  ): { valid: boolean; errors: string[] } {
+    const errors: string[] = []
+    const title = message.title.trim()
+
+    if (!SUBJECT_PATTERN.test(title)) {
+      errors.push('Subject must follow Conventional Commits format')
+    }
+
+    if (title.length > options.maxTitleLength) {
+      errors.push(
+        `Subject exceeds ${options.maxTitleLength} characters`
+      )
+    }
+
+    if (this.containsFilePathOrExtension(title)) {
+      errors.push('Subject must not include file paths or extensions')
+    }
+
+    const bannedSubjectPattern = new RegExp(
+      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
+      'i'
+    )
+    if (bannedSubjectPattern.test(title)) {
+      errors.push('Subject contains banned filler words')
+    }
+    if (VAGUE_SUBJECT_PATTERNS.some((pattern) => pattern.test(title))) {
+      errors.push('Subject is too vague')
+    }
+
+    if (options.internalChange && /^feat(\(|:)/.test(title)) {
+      errors.push('Use refactor/chore for internal tooling changes (not feat)')
+    }
+
+    if (options.docsOnly && !/^docs(\(|:)/.test(title)) {
+      errors.push('Use docs for documentation-only changes')
+    }
+
+    if (message.body) {
+      if (
+        options.includeBodyMode === 'never' ||
+        !options.includeBodyAllowed
+      ) {
+        errors.push('Body is not allowed for this commit')
+      }
+
+      const bodyLines = message.body
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+
+      if (bodyLines.length > 2) {
+        errors.push('Body must be 2 bullets or fewer')
+      }
+
+      if (bodyLines.some((line) => !line.startsWith('- '))) {
+        errors.push('Body bullets must start with "- "')
+      }
+
+      const narrationWords = [
+        'update',
+        'updated',
+        'modify',
+        'modified',
+        'change',
+        'changed',
+        'refactor',
+        'refactored',
+        'adjust',
+        'adjusted',
+        'cleanup',
+        'cleaned',
+      ]
+      const narrationPattern = new RegExp(
+        `\\b(${narrationWords.join('|')})\\b`,
+        'i'
+      )
+      if (bodyLines.some((line) => narrationPattern.test(line))) {
+        errors.push('Body notes must avoid narration words')
+      }
+    }
+
+    return { valid: errors.length === 0, errors }
   }
 
   /**
@@ -174,14 +356,18 @@ export class OpenAIService {
    *
    * @param diff - The diff to generate a commit message for.
    * @param userMessage - Optional user-provided message for guidance.
+   * @param includeBodyAllowed - Whether a body is allowed for this commit.
+   * @param includeBodyMode - The includeBody policy mode.
    * @returns The prompt for the OpenAI API.
    */
   private async buildPrompt(
     diff: ProcessedDiff,
-    userMessage?: string
+    userMessage: string | undefined,
+    includeBodyAllowed: boolean,
+    includeBodyMode: CommitConfig['includeBody']
   ): Promise<string> {
-    const parts = [
-      'TASK: Generate a conventional commit message for these changes.',
+    const parts: string[] = [
+      'Generate a conventional commit message for the changes below.',
     ]
 
     // Add branch context for scope hints
@@ -210,15 +396,12 @@ export class OpenAIService {
 
       if (potentialScope && potentialScope.length > 2) {
         parts.push(
-          `BRANCH: ${branchName} (suggested scope: ${potentialScope.toLowerCase()})`
+          `Branch: ${branchName} (scope hint: ${potentialScope.toLowerCase()})`
         )
       } else {
-        parts.push(`BRANCH: ${branchName}`)
+        parts.push(`Branch: ${branchName}`)
       }
     }
-
-    // Process diff to remove binary content
-    const processedDiff = this.processDiffContent(diff)
 
     // Check if this is a merge commit
     const {
@@ -227,112 +410,155 @@ export class OpenAIService {
       sourceBranch,
       targetBranch,
     } = await this.detectMergeInfo(
-      processedDiff,
+      diff,
       userMessage,
       this.options.merge
     )
 
     if (confirmed) {
-      parts.push('\nCOMMIT TYPE: Merge commit')
+      parts.push('This is a merge commit.')
       if (sourceBranch && targetBranch) {
-        parts.push(`MERGE: ${sourceBranch} → ${targetBranch}`)
+        parts.push(`Merge: ${sourceBranch} → ${targetBranch}`)
       }
       if (mergeInfo) {
-        parts.push('MERGE DETAILS:')
         parts.push(...mergeInfo)
       }
     }
 
     // Add user guidance if provided - but keep it focused
     if (userMessage) {
-      parts.push('\nUSER CONTEXT:')
+      parts.push('User context:')
       parts.push(userMessage)
-      parts.push(
-        '(Use this as guidance but ensure the commit reflects actual changes)'
-      )
     }
 
-    // Add recent commits context with clear purpose
-    const recentCommits = await GitService.getRecentCommits(5) // Get 5 to filter from
-
-    // Debug logging to understand what commits we're getting
-    if (recentCommits.length > 0) {
-      LoggerService.debug('\n🔍 Recent commits retrieved:')
-      recentCommits.forEach((commit, index) => {
-        const firstLine = commit.message.split('\n')[0]
-        LoggerService.debug(`${index + 1}. ${firstLine}`)
-      })
+    if (includeBodyMode === 'never') {
+      parts.push('Body is not allowed for this commit.')
+    } else if (!includeBodyAllowed) {
+      parts.push('Return only the subject line.')
     }
 
-    // Filter for good examples (conventional commits only)
-    const goodExamples = recentCommits
-      .filter((commit) => {
-        const firstLine = commit.message.split('\n')[0]
-        // More lenient pattern - allows optional scope and various formats
-        const strictMatch =
-          /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?: .+/.test(
-            firstLine
+    parts.push(`Max subject length: ${this.commitConfig.maxTitleLength} characters.`)
+
+    if (includeBodyMode === 'always') {
+      const recentCommits = await GitService.getRecentCommits(5)
+
+      if (recentCommits.length > 0) {
+        LoggerService.debug('\n🔍 Recent commits retrieved:')
+        recentCommits.forEach((commit, index) => {
+          const firstLine = commit.message.split('\n')[0]
+          LoggerService.debug(`${index + 1}. ${firstLine}`)
+        })
+      }
+
+      const goodExamples = recentCommits
+        .filter((commit) => {
+          const firstLine = commit.message.split('\n')[0]
+          const strictMatch =
+            /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?: .+/.test(
+              firstLine
+            )
+          const lenientMatch =
+            /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)[:\s].+/.test(
+              firstLine
+            )
+
+          const matches = strictMatch || lenientMatch
+          LoggerService.debug(
+            `Checking: "${firstLine}" -> ${matches ? 'MATCH' : 'NO MATCH'}`
           )
-        const lenientMatch =
-          /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)[:\s].+/.test(
-            firstLine
-          )
 
-        const matches = strictMatch || lenientMatch
+          return matches
+        })
+        .slice(0, 3)
 
-        // Debug each commit's match status
-        LoggerService.debug(
-          `Checking: "${firstLine}" -> ${matches ? 'MATCH' : 'NO MATCH'}`
-        )
-
-        return matches
-      })
-      .slice(0, 3) // Take best 3 examples
-
-    LoggerService.debug(`\n📊 Filtered to ${goodExamples.length} good examples`)
-
-    if (goodExamples.length > 0) {
-      parts.push('\nRECENT COMMITS (for style consistency only):')
-      goodExamples.forEach((commit) => {
-        const shortMessage = commit.message.split('\n')[0] // Only first line
-        parts.push(`• ${shortMessage}`)
-      })
-      parts.push(
-        'NOTE: Use these ONLY for style/format reference, not content guidance'
-      )
-    } else if (recentCommits.length > 0) {
-      // If no good examples, show a note about recent commits in debug
       LoggerService.debug(
-        '\n⚠️  No conventional commits found, showing all recent commits for reference:'
+        `\n📊 Filtered to ${goodExamples.length} good examples`
       )
-      recentCommits.forEach((commit, index) => {
-        const firstLine = commit.message.split('\n')[0]
-        LoggerService.debug(`${index + 1}. ${firstLine}`)
+
+      if (goodExamples.length > 0) {
+        parts.push('Recent commits (style only):')
+        goodExamples.forEach((commit) => {
+          const shortMessage = commit.message.split('\n')[0]
+          parts.push(`- ${shortMessage}`)
+        })
+      } else if (recentCommits.length > 0) {
+        LoggerService.debug(
+          '\n⚠️  No conventional commits found in recent history'
+        )
+      }
+    }
+
+    const nameStatus = diff.signals?.nameStatus || []
+    const numStat = diff.signals?.numStat || []
+    const topFiles = diff.signals?.topFiles || []
+    const patchSnippets = diff.signals?.patchSnippets || []
+
+    const scopeHint = this.inferScopeFromPaths(
+      topFiles.length > 0
+        ? topFiles
+        : nameStatus.map((entry) => entry.path)
+    )
+    if (scopeHint) {
+      parts.push(`Scope hint: ${scopeHint}`)
+    }
+
+    if (this.isDocsOnlyChange(diff)) {
+      parts.push('Type hint: docs (documentation-only change)')
+      parts.push(`Scope hint: ${this.getDocsScope(diff)}`)
+    }
+
+    if (this.isDocsOnlyChange(diff)) {
+      parts.push('Type hint: docs (documentation-only change)')
+      parts.push(`Scope hint: ${this.getDocsScope(diff)}`)
+    } else if (this.isInternalToolingChange(diff)) {
+      parts.push('Type hint: refactor (internal tooling change)')
+    }
+
+    if (this.isDocsTouched(diff) && !this.isDocsOnlyChange(diff)) {
+      const docsTouched = this.getDocsTouchedList(diff).slice(0, 3)
+      if (docsTouched.length > 0) {
+        parts.push(`Docs touched: ${docsTouched.join(', ')}`)
+      }
+    }
+
+    if (nameStatus.length > 0) {
+      parts.push('Changes (name-status):')
+      nameStatus.forEach((entry) => {
+        if (entry.status === 'R' || entry.status === 'C') {
+          const oldPath = entry.oldPath || 'unknown'
+          parts.push(`- ${entry.status} ${oldPath} -> ${entry.path}`)
+        } else {
+          parts.push(`- ${entry.status} ${entry.path}`)
+        }
       })
     }
 
-    // Add change analysis with clear structure
-    parts.push('\n' + '='.repeat(50))
-    parts.push('CHANGES TO ANALYZE:')
-    parts.push('='.repeat(50))
+    parts.push('Stats:')
+    parts.push(`- files: ${diff.stats.filesChanged}`)
+    parts.push(`- insertions: ${diff.stats.additions}`)
+    parts.push(`- deletions: ${diff.stats.deletions}`)
 
-    if (processedDiff.stats.wasSummarized) {
-      parts.push(processedDiff.summary)
-      parts.push(`\nCHANGE STATS:`)
-      parts.push(`• Files: ${processedDiff.stats.filesChanged}`)
-      parts.push(`• Additions: ${processedDiff.stats.additions} lines`)
-      parts.push(`• Deletions: ${processedDiff.stats.deletions} lines`)
-    } else {
-      parts.push(processedDiff.summary)
+    if (topFiles.length > 0) {
+      parts.push('Top changes:')
+      topFiles.forEach((path) => {
+        const stats = numStat.find((entry) => entry.path === path)
+        if (stats) {
+          parts.push(`- ${path} (+${stats.insertions}/-${stats.deletions})`)
+        } else {
+          parts.push(`- ${path}`)
+        }
+      })
     }
 
-    parts.push('\n' + '='.repeat(50))
-    parts.push('INSTRUCTIONS:')
-    parts.push('1. Analyze the changes above')
-    parts.push('2. Choose the most accurate commit type')
-    parts.push('3. Write a clear, specific commit message')
-    parts.push('4. Focus on the most significant changes')
-    parts.push('='.repeat(50))
+    if (patchSnippets.length > 0) {
+      parts.push('Top diffs (snippets):')
+      patchSnippets.slice(0, 3).forEach((snippet) => {
+        parts.push(snippet)
+      })
+    } else if (diff.summary) {
+      parts.push('Summary:')
+      parts.push(diff.summary)
+    }
 
     return parts.join('\n')
   }
@@ -352,6 +578,489 @@ export class OpenAIService {
         .toLowerCase()
       return match.replace(scope, kebabScope)
     })
+  }
+
+  private inferScopeFromPaths(paths: string[]): string | undefined {
+    const counts = new Map<string, number>()
+    const scopeRules = this.getScopeRules()
+
+    for (const path of paths) {
+      for (const entry of scopeRules) {
+        if (entry.match.test(path)) {
+          counts.set(entry.scope, (counts.get(entry.scope) || 0) + 1)
+        }
+      }
+    }
+
+    const best = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]
+    return best?.[0]
+  }
+
+  private getScopeRules(): { scope: string; match: RegExp }[] {
+    const fallbackRules = [
+      { scope: 'translations', match: /\/translations\// },
+      { scope: 'tests', match: /\/(__tests__|tests)\// },
+      { scope: 'config', match: /(config|\.config|tsconfig|package)\./ },
+      { scope: 'docs', match: /\/(docs|doc)\// },
+      { scope: 'services', match: /\/services\// },
+    ]
+
+    const rawRules = this.commitConfig.scopeRules || []
+    if (rawRules.length === 0) {
+      return fallbackRules
+    }
+
+    const parsed = rawRules
+      .map((rule) => {
+        try {
+          return { scope: rule.scope, match: new RegExp(rule.match) }
+        } catch {
+          return undefined
+        }
+      })
+      .filter(Boolean) as { scope: string; match: RegExp }[]
+
+    if (parsed.length === 0) {
+      return fallbackRules
+    }
+    return parsed
+  }
+
+  private normalizeSubject(candidate: string): string {
+    return candidate.split('\n')[0]?.replace(/\s+/g, ' ').trim() || ''
+  }
+
+  private isValidSubject(subject: string, maxLength: number): boolean {
+    if (!subject || subject.length > maxLength) return false
+    if (!SUBJECT_PATTERN.test(subject)) return false
+    if (this.containsFilePathOrExtension(subject)) return false
+    const bannedSubjectPattern = new RegExp(
+      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
+      'i'
+    )
+    if (bannedSubjectPattern.test(subject)) return false
+    if (VAGUE_SUBJECT_PATTERNS.some((pattern) => pattern.test(subject))) {
+      return false
+    }
+    return true
+  }
+
+  private splitValidationErrors(errors: string[]): {
+    structural: string[]
+    style: string[]
+  } {
+    const structural: string[] = []
+    const style: string[] = []
+
+    errors.forEach((error) => {
+      if (
+        error.includes('Conventional Commits format') ||
+        error.includes('Use refactor/chore') ||
+        error.includes('Use docs for documentation-only changes')
+      ) {
+        structural.push(error)
+      } else {
+        style.push(error)
+      }
+    })
+
+    return { structural, style }
+  }
+
+  private stripFilePaths(text: string): string {
+    let cleaned = text
+    cleaned = cleaned.replace(/[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/g, '')
+    cleaned = cleaned.replace(/[A-Za-z0-9._-]+\\[A-Za-z0-9._\\-]+/g, '')
+    cleaned = cleaned.replace(/\b[\w-]+\.[a-z][a-z0-9]{1,4}\b/gi, '')
+    return cleaned
+  }
+
+  private removeBannedWords(text: string): string {
+    const bannedSubjectPattern = new RegExp(
+      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
+      'gi'
+    )
+    return text.replace(bannedSubjectPattern, '')
+  }
+
+  private normalizeRenameDescription(description: string): string {
+    const normalized = description.replace(/\s+/g, ' ').trim()
+    // Examples: "replace A with B" -> "rename A to B", "A -> B" -> "rename A to B".
+    const replaceMatch = normalized.match(
+      /^replace\s+(.+?)\s+with\s+(.+)$/i
+    )
+    if (replaceMatch) {
+      return `rename ${replaceMatch[1]} to ${replaceMatch[2]}`
+    }
+
+    const renameMatch = normalized.match(/^rename\s+(.+?)\s+to\s+(.+)$/i)
+    if (renameMatch) {
+      return `rename ${renameMatch[1]} to ${renameMatch[2]}`
+    }
+
+    const arrowMatch = normalized.match(/^(.+?)\s*(?:->|→)\s*(.+)$/)
+    if (arrowMatch) {
+      return `rename ${arrowMatch[1]} to ${arrowMatch[2]}`
+    }
+
+    return description
+  }
+
+  private shortenRenamePair(source: string, target: string): {
+    source: string
+    target: string
+  } {
+    const stripPrefix = (value: string) =>
+      value.replace(/^enable/i, '').replace(/^\W+/, '').trim() || value
+    return {
+      source: stripPrefix(source),
+      target: stripPrefix(target),
+    }
+  }
+
+  private buildRenameDescription(
+    description: string,
+    maxLength: number,
+    prefixLength: number
+  ): string {
+    const match = description.match(/^rename\s+(.+?)\s+to\s+(.+)$/i)
+    if (!match) {
+      return description
+    }
+
+    const rawSource = this.stripFilePaths(match[1]).trim()
+    const rawTarget = this.stripFilePaths(match[2]).trim()
+    if (!rawSource || !rawTarget) {
+      return description
+    }
+
+    const fullDescription = `rename ${rawSource} to ${rawTarget}`
+    if (prefixLength + fullDescription.length <= maxLength) {
+      return fullDescription
+    }
+
+    const arrowDescription = `rename ${rawSource} → ${rawTarget}`
+    if (prefixLength + arrowDescription.length <= maxLength) {
+      return arrowDescription
+    }
+
+    const shortened = this.shortenRenamePair(rawSource, rawTarget)
+    const shortenedDescription = `rename ${shortened.source} → ${shortened.target}`
+    if (prefixLength + shortenedDescription.length <= maxLength) {
+      return shortenedDescription
+    }
+
+    return `rename ${rawSource} → ${rawTarget}`
+  }
+
+  private isVagueDescription(description: string): boolean {
+    const tokens = description
+      .split(/\s+/)
+      .map((token) => token.toLowerCase())
+      .filter(Boolean)
+    if (tokens.length === 0) return true
+    if (tokens.every((token) => VAGUE_DESCRIPTION_WORDS.includes(token))) {
+      return true
+    }
+    if (tokens.length <= 3) {
+      return tokens.some((token) => VAGUE_DESCRIPTION_WORDS.includes(token))
+    }
+    return false
+  }
+
+  private refineDescriptionWording(
+    description: string,
+    context: {
+      docsTouched?: boolean
+      internalChange?: boolean
+      qualityTuning?: boolean
+    }
+  ): string {
+    let refined = description
+
+    for (const [pattern, replacement] of TASTE_PHRASE_REWRITES) {
+      refined = refined.replace(pattern, replacement)
+    }
+
+    refined = this.normalizeVerbChoice(refined, context)
+    refined = this.tightenNouns(refined)
+
+    for (const [pattern, replacement] of TASTE_VERB_REWRITES) {
+      refined = refined.replace(pattern, replacement)
+    }
+
+    refined = refined.replace(/\bhandling\b/gi, 'support')
+    refined = refined.replace(/\bprocess\b/gi, '')
+    refined = refined.replace(/\bparameters?\b/gi, '')
+    refined = refined.replace(/\s+/g, ' ').trim()
+
+    if (context.docsTouched) {
+      refined = refined.replace(/\bdocumentation changes?\b/gi, 'docs changes')
+      refined = refined.replace(/\bdocs changes?\b/gi, 'docs change detection')
+    }
+
+    if (context.internalChange) {
+      refined = refined.replace(/\blogic\b/gi, 'validation')
+    }
+
+    return this.finalizeDescription(refined)
+  }
+
+  private normalizeVerbChoice(
+    description: string,
+    context: { docsTouched?: boolean; internalChange?: boolean; qualityTuning?: boolean }
+  ): string {
+    let refined = description
+    if (context.qualityTuning || context.internalChange) {
+      refined = refined.replace(/\bimplement\b/gi, 'refine')
+      refined = refined.replace(/\badd\b/gi, 'refine')
+    }
+    refined = refined.replace(/\badjust\b/gi, 'refine')
+    refined = refined.replace(/\bimprove\b/gi, 'tighten')
+    return refined
+  }
+
+  private tightenNouns(description: string): string {
+    let refined = description
+    refined = refined.replace(/\bdescription refinement\b/gi, 'description wording')
+    refined = refined.replace(/\bcommit messages\b/gi, 'commit subjects')
+    refined = refined.replace(/\bdocumentation changes?\b/gi, 'docs change detection')
+    refined = refined.replace(/\bvalidation process\b/gi, 'validation')
+    refined = refined.replace(/\bconfiguration handling\b/gi, 'config handling')
+    refined = refined.replace(/\bbehavior\b/gi, '')
+    return refined
+  }
+
+  private finalizeDescription(description: string): string {
+    let refined = description.replace(/\s+/g, ' ').trim()
+    refined = refined.replace(/[-:,.]+$/, '').trim()
+    refined = this.trimTrailingStopWord(refined)
+    return refined.replace(/\s+/g, ' ').trim()
+  }
+
+  private isQualityTuningChange(diff: ProcessedDiff): boolean {
+    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    const touched = paths.some((path) =>
+      [
+        'src/services/OpenAI.service.ts',
+        'src/constants/openai.constants.ts',
+        'src/processors/Diff.processor.ts',
+        'src/services/Git.service.ts',
+      ].includes(path)
+    )
+    if (!touched) {
+      return false
+    }
+    const snippets = diff.signals?.patchSnippets?.join('\n') || ''
+    return /(validateCommitMessage|repairSubject|truncateSubject|scopeRules|templates|prompt|banned|vague|refineDescription)/.test(
+      snippets
+    )
+  }
+
+  private buildBehaviorTemplateSubject(diff: ProcessedDiff): string | undefined {
+    if (!this.commitConfig.enableBehaviorTemplates) {
+      return undefined
+    }
+    const paths = diff.signals?.topFiles?.length
+      ? diff.signals.topFiles
+      : diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    const snippets = diff.signals?.patchSnippets?.join('\n') || ''
+
+    const translationsOnly =
+      paths.length > 0 &&
+      paths.every((path) => /^src\/translations\//.test(path))
+    if (translationsOnly) {
+      return 'feat(translations): add new copy strings'
+    }
+
+    const loggingSwap =
+      /console\./.test(snippets) && /AppLogger|LoggerService/.test(snippets)
+    if (loggingSwap && paths.length > 0 && paths.length <= 3) {
+      return 'chore(logging): standardize logging'
+    }
+
+    return undefined
+  }
+
+  private repairSubject(
+    diff: ProcessedDiff,
+    candidate: string
+  ): string | undefined {
+    const maxLength = this.commitConfig.maxTitleLength
+    const normalized = this.normalizeSubject(candidate)
+    const match = normalized.match(SUBJECT_PARSE_PATTERN)
+    if (!match) {
+      return undefined
+    }
+
+    const type = match[1]
+    const scope = match[2] || ''
+    let description = match[3]
+
+    description = this.stripFilePaths(description)
+    description = this.removeBannedWords(description)
+    description = this.normalizeRenameDescription(description)
+    description = description.replace(/\s+/g, ' ').trim()
+    description = description
+      .replace(/\b(from|in|on|at|within|inside)\s*$/i, '')
+      .trim()
+
+    if (
+      !description ||
+      VAGUE_SUBJECT_PATTERNS.some((pattern) =>
+        pattern.test(`${type}${scope}: ${description}`)
+      ) ||
+      this.isVagueDescription(description)
+    ) {
+      const template = this.buildBehaviorTemplateSubject(diff)
+      if (template) {
+        return template
+      }
+      if (this.isDocsTouched(diff) && !this.isDocsOnlyChange(diff)) {
+        description = 'refine docs change detection for commit subjects'
+      } else {
+        description = 'align commit flow'
+      }
+    }
+
+    description = this.refineDescriptionWording(description, {
+      docsTouched: this.isDocsTouched(diff),
+      internalChange: this.isInternalToolingChange(diff),
+      qualityTuning: this.isQualityTuningChange(diff),
+    })
+
+    const prefix = `${type}${scope}: `
+    const renameDescription = this.buildRenameDescription(
+      description,
+      maxLength,
+      prefix.length
+    )
+    const subject = this.truncateSubjectToMax(
+      `${type}${scope}: ${renameDescription}`,
+      maxLength
+    )
+
+    if (!this.isValidSubject(subject, maxLength)) {
+      return undefined
+    }
+
+    return subject
+  }
+
+  private repairDocsSubject(
+    diff: ProcessedDiff,
+    candidate: string
+  ): string | undefined {
+    if (!this.isDocsOnlyChange(diff)) {
+      return undefined
+    }
+
+    const normalized = this.normalizeSubject(candidate)
+    const match = normalized.match(SUBJECT_PARSE_PATTERN)
+    const description = match ? match[3] : 'update documentation'
+    const scope = this.getDocsScope(diff)
+    const subject = this.truncateSubjectToMax(
+      `docs(${scope}): ${description}`,
+      this.commitConfig.maxTitleLength
+    )
+
+    if (!this.isValidSubject(subject, this.commitConfig.maxTitleLength)) {
+      return undefined
+    }
+
+    return subject
+  }
+
+  private truncateSubjectToMax(subject: string, maxLength: number): string {
+    if (subject.length <= maxLength) return subject
+    const match = subject.match(SUBJECT_PARSE_PATTERN)
+    if (!match) {
+      return subject.slice(0, maxLength).trim()
+    }
+
+    const type = match[1]
+    const scope = match[2] || ''
+    const description = match[3]
+    const prefix = `${type}${scope}: `
+    const allowed = Math.max(0, maxLength - prefix.length)
+
+    if (allowed === 0) {
+      return `${type}: align commit flow`.slice(0, maxLength).trim()
+    }
+
+    const rawSlice = description.slice(0, allowed)
+    const lastSpaceIndex = rawSlice.lastIndexOf(' ')
+    let candidate =
+      lastSpaceIndex > 0
+        ? rawSlice.slice(0, lastSpaceIndex).trim()
+        : rawSlice.trim()
+    candidate = candidate.replace(/[-:,.]+$/, '').trim()
+    candidate = this.trimTrailingStopWord(candidate)
+    const cleaned = candidate.replace(/[-:,.]+$/, '').trim()
+    if (!cleaned) {
+      return `${type}${scope}: align commit flow`.slice(0, maxLength).trim()
+    }
+    return `${prefix}${cleaned}`.trim()
+  }
+
+  private trimTrailingStopWord(text: string): string {
+    const words = text.split(/\s+/).filter(Boolean)
+    if (words.length === 0) return text
+    while (words.length > 1) {
+      const lastWord = words[words.length - 1].toLowerCase()
+      if (!TRAILING_STOP_WORDS.includes(lastWord)) {
+        break
+      }
+      words.pop()
+    }
+    return words.join(' ')
+  }
+
+  private buildSafeFallbackSubject(
+    diff: ProcessedDiff,
+    candidate?: string
+  ): string {
+    const maxLength = this.commitConfig.maxTitleLength
+    const candidateSubject = candidate
+      ? this.normalizeSubject(candidate)
+      : ''
+
+    if (this.isValidSubject(candidateSubject, maxLength)) {
+      return candidateSubject
+    }
+
+    const truncatedCandidate = this.truncateSubjectToMax(
+      candidateSubject,
+      maxLength
+    )
+    if (this.isValidSubject(truncatedCandidate, maxLength)) {
+      return truncatedCandidate
+    }
+
+    const scopeHint = this.inferScopeFromPaths(
+      diff.signals?.topFiles?.length
+        ? diff.signals.topFiles
+        : diff.signals?.nameStatus?.map((entry) => entry.path) || []
+    )
+
+    const baseDescription = 'align commit flow'
+    const preferredType = scopeHint ? 'refactor' : 'chore'
+    const scoped = scopeHint
+      ? `${preferredType}(${scopeHint}): ${baseDescription}`
+      : `${preferredType}: ${baseDescription}`
+
+    const scopedTruncated = this.truncateSubjectToMax(scoped, maxLength)
+    if (this.isValidSubject(scopedTruncated, maxLength)) {
+      return scopedTruncated
+    }
+
+    const fallback = `chore: ${baseDescription}`
+    const fallbackTruncated = this.truncateSubjectToMax(fallback, maxLength)
+    if (this.isValidSubject(fallbackTruncated, maxLength)) {
+      return fallbackTruncated
+    }
+
+    return 'chore: align commit flow'
   }
 
   /**
@@ -469,19 +1178,23 @@ export class OpenAIService {
       }
     }
 
-    const prompt = await this.buildPrompt(diff, userMessage)
+    const includeBodyAllowed = this.shouldIncludeBody(
+      this.commitConfig.includeBody,
+      diff.stats,
+      userMessage
+    )
 
-    // Log model info
-    LoggerService.debug(`\n🤖 Model: ${this.config.model}`)
+    const prompt = await this.buildPrompt(
+      diff,
+      userMessage,
+      includeBodyAllowed,
+      this.commitConfig.includeBody
+    )
 
-    const messages: ChatCompletionMessageParam[] = [
+    const baseMessages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content:
-          COMMIT_MESSAGE_SYSTEM_CONTENT +
-          (userMessage
-            ? '\nA user message has been provided as guidance. Consider it strongly for the commit message, but ensure the message accurately reflects the actual changes.'
-            : ''),
+        content: COMMIT_MESSAGE_SYSTEM_CONTENT,
       },
       {
         role: 'user',
@@ -489,37 +1202,176 @@ export class OpenAIService {
       },
     ]
 
-    LoggerService.debug('\n🔍 Building OpenAI Request:')
-    LoggerService.debug(`Model: ${this.config.model}`)
-    LoggerService.debug(`Max Tokens: ${this.config.maxTokens}`)
-    LoggerService.debug(`Temperature: ${this.config.temperature}`)
-    LoggerService.debug('Messages:')
-    LoggerService.debug(`system: ${messages[0].content}`)
-    LoggerService.debug(`user: ${prompt}`)
+    const retryModel = this.config.model.includes('mini')
+      ? 'gpt-4o'
+      : this.config.model
+    const retryTemperature = Math.min(this.config.temperature, 0.1)
+    const internalChange = this.isInternalToolingChange(diff)
+    const docsOnly = this.isDocsOnlyChange(diff)
 
-    LoggerService.debug('\n📤 Sending request to OpenAI...')
+    let lastMessage: CommitMessage | undefined
+    let lastErrors: string[] = []
 
-    const response = await this.client.chat.completions.create({
-      model: this.config.model,
-      messages,
-      max_tokens: this.config.maxTokens,
-      temperature: this.config.temperature,
-      top_p: this.config.topP,
-      frequency_penalty: this.config.frequencyPenalty,
-      presence_penalty: this.config.presencePenalty,
-    })
+    const attemptOnce = async (
+      isRetry: boolean
+    ): Promise<{ message?: CommitMessage; errors?: string[] }> => {
+      const model = isRetry ? retryModel : this.config.model
+      const temperature = isRetry ? retryTemperature : this.config.temperature
+      if (isRetry) {
+        LoggerService.debug(
+          `Retrying with ${model} due to validation failures: ${lastErrors.join(
+            '; '
+          )}`
+        )
+      }
 
-    LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
+      const messages: ChatCompletionMessageParam[] = isRetry
+        ? [
+          baseMessages[0],
+          {
+            role: 'user',
+            content:
+              `${prompt}\nPrevious output:\n${lastMessage?.title ?? ''}\n` +
+              (lastMessage?.body ? `${lastMessage.body}\n` : '') +
+              `Violations:\n- ${lastErrors.join('\n- ')}\nReturn only the corrected commit message.`,
+          } as ChatCompletionMessageParam,
+        ]
+        : baseMessages
 
-    LoggerService.debug('\n📥 Received response from OpenAI:')
-    LoggerService.debug(JSON.stringify(response, null, 2))
+      LoggerService.debug('\n🔍 Building OpenAI Request:')
+      LoggerService.debug(`Model: ${model}`)
+      const maxCompletionTokens = isRetry
+        ? Math.max(this.config.maxTokens, 350)
+        : this.config.maxTokens
+      LoggerService.debug(`Max Tokens: ${maxCompletionTokens}`)
+      LoggerService.debug(`Temperature: ${temperature}`)
+      LoggerService.debug('Messages:')
+      LoggerService.debug(`system: ${messages[0].content}`)
+      LoggerService.debug(`user: ${messages[1].content}`)
 
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      throw new Error('No commit message generated')
+      LoggerService.debug('\n📤 Sending request to OpenAI...')
+
+      const requestBody: OpenAI.ChatCompletionCreateParamsNonStreaming = {
+        model,
+        messages,
+        max_completion_tokens: maxCompletionTokens,
+      }
+
+      if (!model.startsWith('gpt-5')) {
+        requestBody.temperature = temperature
+        requestBody.top_p = this.config.topP
+        requestBody.frequency_penalty = this.config.frequencyPenalty
+        requestBody.presence_penalty = this.config.presencePenalty
+      }
+
+      const response = await this.client.chat.completions.create(requestBody)
+
+      LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)
+      LoggerService.debug(
+        `Finish reason: ${response.choices[0]?.finish_reason}`
+      )
+
+      LoggerService.debug('\n📥 Received response from OpenAI:')
+      LoggerService.debug(JSON.stringify(response, null, 2))
+
+      const rawContent = response.choices[0]?.message?.content || ''
+      const content = rawContent.trim()
+      const finishReason = response.choices[0]?.finish_reason
+      if (!content) {
+        return { errors: ['Empty response from model'] }
+      }
+
+      if (isRetry && finishReason !== 'stop') {
+        return { errors: ['Retry did not finish successfully'] }
+      }
+
+      const parsedMessage = this.parseCommitMessage(rawContent)
+      lastMessage = parsedMessage
+
+      const templateSubject = this.buildBehaviorTemplateSubject(diff)
+      if (
+        templateSubject &&
+        this.isValidSubject(templateSubject, this.commitConfig.maxTitleLength)
+      ) {
+        return { message: { title: templateSubject, body: undefined } }
+      }
+
+      const validation = this.validateCommitMessage(parsedMessage, {
+        maxTitleLength: this.commitConfig.maxTitleLength,
+        includeBodyMode: this.commitConfig.includeBody,
+        includeBodyAllowed,
+        internalChange,
+        docsOnly,
+      })
+
+      if (validation.valid) {
+        return { message: parsedMessage }
+      }
+
+      const subjectOnly: CommitMessage = {
+        title: parsedMessage.title,
+        body: undefined,
+      }
+      const subjectOnlyValidation = this.validateCommitMessage(subjectOnly, {
+        maxTitleLength: this.commitConfig.maxTitleLength,
+        includeBodyMode: this.commitConfig.includeBody,
+        includeBodyAllowed,
+        internalChange,
+        docsOnly,
+      })
+      if (subjectOnlyValidation.valid) {
+        return { message: subjectOnly }
+      }
+
+      const docsRepaired = this.repairDocsSubject(diff, parsedMessage.title)
+      if (docsRepaired) {
+        LoggerService.debug(
+          `Repaired subject locally: "${parsedMessage.title}" -> "${docsRepaired}"`
+        )
+        return { message: { title: docsRepaired, body: undefined } }
+      }
+
+      const repaired = this.repairSubject(diff, parsedMessage.title)
+      if (repaired) {
+        LoggerService.debug(
+          `Repaired subject locally: "${parsedMessage.title}" -> "${repaired}"`
+        )
+        return { message: { title: repaired, body: undefined } }
+      }
+
+      return { errors: validation.errors }
     }
 
-    return this.parseCommitMessage(content)
+    const firstAttempt = await attemptOnce(false)
+    if (firstAttempt.message) {
+      return firstAttempt.message
+    }
+
+    lastErrors = firstAttempt.errors || []
+    const { structural } = this.splitValidationErrors(lastErrors)
+    const structuralFailure =
+      structural.length > 0 ||
+      lastErrors.some(
+        (error) =>
+          error.includes('Empty response') ||
+          error.includes('Retry did not finish')
+      )
+    if (!structuralFailure) {
+      return {
+        title: this.buildSafeFallbackSubject(diff, lastMessage?.title),
+        body: undefined,
+      }
+    }
+
+    const secondAttempt = await attemptOnce(true)
+    if (secondAttempt.message) {
+      return secondAttempt.message
+    }
+
+    return {
+      title: this.buildSafeFallbackSubject(diff, lastMessage?.title),
+      body: undefined,
+    }
   }
 
   /**
@@ -533,6 +1385,7 @@ export class OpenAIService {
     context: string,
     diff?: ProcessedDiff
   ): Promise<string> {
+    const prefixHint = this.inferBranchPrefix(context)
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -553,8 +1406,9 @@ Follow these strict branch naming rules:
 - Remove unnecessary context words (e.g. 'frontend', 'backend', 'server', 'client')
 - Use clear, meaningful terms
 - No special characters except hyphens and forward slashes
+- Prefer the provided prefix hint if available.
 
-IMPORTANT: 
+IMPORTANT:
 1. Respond ONLY with the branch name, nothing else
 2. Keep names SHORT - if you can say it in fewer words, do it
 3. Remove any implementation details or technical context
@@ -574,7 +1428,7 @@ Examples of bad branch names:
       },
       {
         role: 'user',
-        content: await this.buildBranchPrompt(context, diff),
+        content: await this.buildBranchPrompt(context, diff, prefixHint),
       },
     ]
 
@@ -582,11 +1436,15 @@ Examples of bad branch names:
       const completion = await this.client.chat.completions.create({
         model: this.config.model,
         messages,
-        temperature: 0.3, // Lower temperature for more focused names
-        max_tokens: 60,
-        top_p: this.config.topP,
-        frequency_penalty: this.config.frequencyPenalty,
-        presence_penalty: this.config.presencePenalty,
+        max_completion_tokens: 60,
+        ...(this.config.model.startsWith('gpt-5')
+          ? {}
+          : {
+            temperature: 0.3,
+            top_p: this.config.topP,
+            frequency_penalty: this.config.frequencyPenalty,
+            presence_penalty: this.config.presencePenalty,
+          }),
       })
 
       const response = completion.choices[0]?.message?.content?.trim() || ''
@@ -613,16 +1471,20 @@ Examples of bad branch names:
         'style/',
         'docs/',
       ]
-      if (!validPrefixes.some((prefix) => branchName.startsWith(prefix))) {
-        // Default to chore/ if no valid prefix is present
-        return 'chore/' + branchName
+      let normalizedBranch = branchName
+      const hasValidPrefix = validPrefixes.some((prefix) =>
+        normalizedBranch.startsWith(prefix)
+      )
+      if (!hasValidPrefix) {
+        normalizedBranch = normalizedBranch.replace(/^[^/]+\//, '')
+        normalizedBranch = prefixHint + normalizedBranch.replace(/^\/+/, '')
       }
 
       // Enforce maximum length by truncating if necessary
       const maxLength = 40
-      if (branchName.length > maxLength) {
-        const prefix = branchName.split('/')[0] + '/'
-        const name = branchName.slice(prefix.length)
+      if (normalizedBranch.length > maxLength) {
+        const prefix = normalizedBranch.split('/')[0] + '/'
+        const name = normalizedBranch.slice(prefix.length)
         const truncatedName = name.split('-').reduce((acc, part) => {
           if (
             (acc + (acc ? '-' : '') + part).length <=
@@ -635,7 +1497,7 @@ Examples of bad branch names:
         return prefix + truncatedName
       }
 
-      return branchName
+      return normalizedBranch
     } catch (error) {
       LoggerService.error('Failed to generate branch name')
       throw error
@@ -651,24 +1513,73 @@ Examples of bad branch names:
    */
   private async buildBranchPrompt(
     context: string,
-    diff?: ProcessedDiff
+    diff: ProcessedDiff | undefined,
+    prefixHint: string
   ): Promise<string> {
     const parts = ['Generate a branch name based on the following context:']
     parts.push(`\nContext: ${context}`)
+    parts.push(`\nPrefix hint: ${prefixHint}`)
 
     if (diff) {
       parts.push('\nChanges summary:')
-      if (diff.stats.wasSummarized) {
-        parts.push(diff.summary)
-        parts.push(`\nFiles changed: ${diff.stats.filesChanged}`)
-        parts.push(`Additions: ${diff.stats.additions}`)
-        parts.push(`Deletions: ${diff.stats.deletions}`)
-      } else {
-        parts.push(diff.summary)
-      }
+      parts.push(this.buildBranchDiffSummary(diff))
     }
 
     return parts.join('\n')
+  }
+
+  private buildBranchDiffSummary(diff: ProcessedDiff): string {
+    const nameStatus = diff.signals?.nameStatus || []
+    const numStat = diff.signals?.numStat || []
+    const topFiles = diff.signals?.topFiles || []
+
+    const parts: string[] = []
+
+    if (nameStatus.length > 0 && topFiles.length === 0) {
+      const maxEntries = 10
+      const shown = nameStatus.slice(0, maxEntries)
+      parts.push('Name-status:')
+      shown.forEach((entry) => {
+        if (entry.status === 'R' || entry.status === 'C') {
+          const oldPath = entry.oldPath || 'unknown'
+          parts.push(`- ${entry.status} ${oldPath} -> ${entry.path}`)
+        } else {
+          parts.push(`- ${entry.status} ${entry.path}`)
+        }
+      })
+      if (nameStatus.length > maxEntries) {
+        parts.push(`- ... +${nameStatus.length - maxEntries} more`)
+      }
+    }
+
+    parts.push('Stats:')
+    parts.push(`- files: ${diff.stats.filesChanged}`)
+    parts.push(`- insertions: ${diff.stats.additions}`)
+    parts.push(`- deletions: ${diff.stats.deletions}`)
+
+    if (topFiles.length > 0) {
+      parts.push('Top files:')
+      topFiles.forEach((path) => {
+        const stats = numStat.find((entry) => entry.path === path)
+        if (stats) {
+          parts.push(`- ${path} (+${stats.insertions}/-${stats.deletions})`)
+        } else {
+          parts.push(`- ${path}`)
+        }
+      })
+    }
+
+    return parts.join('\n')
+  }
+
+  private inferBranchPrefix(context: string): string {
+    const text = context.toLowerCase()
+    if (/(fix|bug|crash|broken|regression)/.test(text)) return 'fix/'
+    if (/(refactor|cleanup|rename|restructure)/.test(text))
+      return 'refactor/'
+    if (/(docs|readme|changelog)/.test(text)) return 'docs/'
+    if (/(style|format|lint|eslint|prettier)/.test(text)) return 'style/'
+    return 'feat/'
   }
 }
 
@@ -680,7 +1591,7 @@ Examples of bad branch names:
  * @returns An OpenAI service instance
  */
 export const createOpenAIService = (
-  config: OpenAIConfig,
+  config: Config,
   options: OpenAIOptions
 ): OpenAIService => {
   return new OpenAIService(config, options)

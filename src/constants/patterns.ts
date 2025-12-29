@@ -74,10 +74,10 @@ export const NOISY_FILE_PATTERNS = [
   /\.generated\./,
   /\.auto-generated/,
   /^.*-generated\./,
-  /\.map$/,
+  /\.(js|css)\.map$/,
 
   // Environment and config (often auto-generated or sensitive)
-  /^\.env/,
+  /^\.env(?!\.example)/,
   /\.DS_Store$/,
   /^Thumbs\.db$/,
   /^desktop\.ini$/,
@@ -93,8 +93,6 @@ export const NOISY_FILE_PATTERNS = [
 
   // Version control and git
   /^\.git\//,
-  /^\.gitignore$/,
-  /^\.gitkeep$/,
 
   // Log files and temporary files
   /\.log$/,

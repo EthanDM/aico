@@ -6,19 +6,28 @@ import { z } from 'zod'
 export const ConfigSchema = z.object({
   openai: z.object({
     apiKey: z.string(),
-    model: z.string().default('gpt-4o'),
-    maxTokens: z.number().default(500),
-    temperature: z.number().default(0.5),
-    topP: z.number().default(1),
-    frequencyPenalty: z.number().default(0.2),
+    model: z.string().default('gpt-4o-mini'),
+    maxTokens: z.number().default(200),
+    temperature: z.number().default(0.3),
+    topP: z.number().default(0.9),
+    frequencyPenalty: z.number().default(0),
     presencePenalty: z.number().default(0),
   }),
   commit: z.object({
     maxTitleLength: z.number().default(72),
-    maxBodyLength: z.number().default(500),
+    maxBodyLength: z.number().default(200),
     wrapBody: z.number().default(72),
-    includeBody: z.boolean().default(true),
-    includeFooter: z.boolean().default(true),
+    includeBody: z.enum(['auto', 'never', 'always']).default('auto'),
+    includeFooter: z.boolean().default(false),
+    scopeRules: z
+      .array(
+        z.object({
+          scope: z.string(),
+          match: z.string(),
+        })
+      )
+      .default([]),
+    enableBehaviorTemplates: z.boolean().default(false),
   }),
   debug: z.object({
     enabled: z.boolean().default(false),
@@ -30,6 +39,27 @@ export const ConfigSchema = z.object({
  * Type for the Config schema.
  */
 export type Config = z.infer<typeof ConfigSchema>
+
+export type ConfigOverrides = {
+  openai?: Partial<Config['openai']>
+  commit?: Partial<Config['commit']>
+  debug?: Partial<Config['debug']>
+}
+
+export type NameStatusCode = 'A' | 'M' | 'D' | 'R' | 'C'
+
+export interface NameStatusEntry {
+  status: NameStatusCode
+  path: string
+  oldPath?: string
+}
+
+export interface NumStatEntry {
+  insertions: number
+  deletions: number
+  path: string
+  oldPath?: string
+}
 
 /**
  * Interface for the GitDiff type.
@@ -59,6 +89,12 @@ export interface ProcessedDiff {
     deletions: number
     wasSummarized: boolean
     qualityIndicator?: string
+  }
+  signals?: {
+    nameStatus: NameStatusEntry[]
+    numStat: NumStatEntry[]
+    topFiles: string[]
+    patchSnippets: string[]
   }
   isMerge?: boolean
 }

@@ -4,15 +4,17 @@
     "maxTokens": 200,
     "temperature": 0.3,
     "topP": 0.9,
-    "frequencyPenalty": 0.1,
+    "frequencyPenalty": 0,
     "presencePenalty": 0
   },
   "commit": {
-    "maxTitleLength": 50,
+    "maxTitleLength": 72,
     "maxBodyLength": 200,
     "wrapBody": 72,
-    "includeBody": true,
-    "includeFooter": false
+    "includeBody": "auto",
+    "includeFooter": false,
+    "scopeRules": [],
+    "enableBehaviorTemplates": false
   },
   "debug": {
     "enabled": false,

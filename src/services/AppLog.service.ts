@@ -7,10 +7,23 @@ import { ProgramOptions } from './Program.service'
  * Service for handling application logging with different log levels and formatting.
  */
 class AppLogService {
+  private redactApiKey(apiKey: string): string {
+    if (!apiKey) return ''
+    if (apiKey.length <= 8) return '***'
+    return `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}`
+  }
+
   public debugModeEnabled(options: ProgramOptions, config: Config): void {
+    const safeConfig: Config = {
+      ...config,
+      openai: {
+        ...config.openai,
+        apiKey: this.redactApiKey(config.openai.apiKey),
+      },
+    }
     LoggerService.debug('🔧 Debug mode enabled')
     LoggerService.debug('Options: ' + JSON.stringify(options, null, 2))
-    LoggerService.debug('Config: ' + JSON.stringify(config, null, 2))
+    LoggerService.debug('Config: ' + JSON.stringify(safeConfig, null, 2))
   }
 
   public configurationError(error: unknown): void {
