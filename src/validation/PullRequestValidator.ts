@@ -9,6 +9,10 @@ const TITLE_PATTERN = /^(fix|feat|refactor|chore|perf|docs)\([a-z0-9-]+\):\s+\S+
 const FILE_PATH_PATTERN = /(src\/|lib\/|packages\/|\.ts\b|\.tsx\b|\.js\b|\.jsx\b|\.json\b|\.md\b)/
 const FILEISH_HEADING_PATTERN = /(\.md\b|readme\b|services?\b|constants?\b|cli\b|heuristics?\b|processors?\b|prompts?\b|types?\b|validation\b|tests?\b|config\b|scripts?\b|dist\b|build\b|package\b|tsconfig\b|license\b)/i
 const QA_GENERIC_PREFIX = /^(verified|ensured|checked|tested|confirmed)\b/i
+const QA_GENERIC_INNER = /\b(verified|ensured|checked|tested|confirmed)\b/i
+const NOT_TESTED = 'not tested (not run)'
+const CHANGE_VAGUE = /\b(added|updated|refactored|implemented|ensured|enforced)\b/i
+const CHANGE_INTERNAL = /\b(heuristic|template|prompt|validator|validation|parser|pipeline|constants?)\b/i
 const QA_SURFACE_PATTERN = /^[^:]{2,25}:\s+\S+/
 
 export class PullRequestValidator {
@@ -113,8 +117,10 @@ export class PullRequestValidator {
 
     const qaBullets = this.extractBullets(qaFocus)
     const notTested =
-      qaBullets.length === 1 &&
-      qaBullets[0].toLowerCase() === 'not tested (not run)'
+      qaBullets.length === 1 && qaBullets[0].toLowerCase() === NOT_TESTED
+    if (!notTested && qaBullets.some((bullet) => bullet.toLowerCase() === NOT_TESTED)) {
+      errors.push('QA Focus should not mix "Not tested" with other bullets')
+    }
     if (qaBullets.length < 2 && !notTested) {
       errors.push('QA Focus should include at least 2 bullets')
     }
@@ -129,9 +135,26 @@ export class PullRequestValidator {
     }
     if (
       !notTested &&
+      qaBullets.some((bullet) => QA_GENERIC_INNER.test(bullet))
+    ) {
+      errors.push('QA Focus bullets should avoid generic verbs')
+    }
+    if (
+      !notTested &&
       !qaBullets.some((bullet) => QA_SURFACE_PATTERN.test(bullet))
     ) {
       errors.push('QA Focus bullets should start with a surface like "CLI: ..."')
+    }
+
+    if (template === 'default') {
+      const changesBullets = this.extractBullets(sections.get('changes') || '')
+      if (
+        changesBullets.some(
+          (bullet) => CHANGE_VAGUE.test(bullet) && CHANGE_INTERNAL.test(bullet)
+        )
+      ) {
+        errors.push('Changes should describe behavior, not internal mechanics')
+      }
     }
 
     return { valid: errors.length === 0, errors }

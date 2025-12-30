@@ -368,13 +368,15 @@ export class CommitGeneratorService {
       template: PullRequestTemplate,
       promptOverride?: string,
       previousMessage?: PullRequestMessage,
-      violations?: string[]
+      violations?: string[],
+      repairHint?: string
     ): Promise<PullRequestMessage> => {
       const basePrompt = promptOverride || prompt
       if (previousMessage && violations && violations.length > 0) {
+        const extraHint = repairHint ? `\nAdditional instruction: ${repairHint}\n` : '\n'
         const repairPrompt = `${basePrompt}\n\nPrevious output:\n${previousMessage.title}\n\n${previousMessage.body}\n\nViolations:\n- ${violations.join(
           '\n- '
-        )}\n\nReturn a corrected title and description that follow the template exactly.`
+        )}\n${extraHint}\nReturn a corrected title and description that follow the template exactly.`
         return this.openai.generatePullRequestMessage(repairPrompt)
       }
 
@@ -403,11 +405,19 @@ export class CommitGeneratorService {
       }
     }
 
+    const qaOnlyErrors = validation.errors.every((error) =>
+      error.toLowerCase().includes('qa focus')
+    )
+    const qaRepairHint = qaOnlyErrors
+      ? 'QA Focus bullets must be executable checks like "CLI: run aico -p ... -> expect Summary/Changes/QA Focus". Avoid verified/ensured/checked/tested/confirmed.'
+      : undefined
+
     const repaired = await attemptOnce(
       prHints.template,
       undefined,
       first,
-      validation.errors
+      validation.errors,
+      qaRepairHint
     )
     const secondValidation = this.prValidator.validate(
       repaired,

@@ -144,6 +144,9 @@ export class OpenAIService {
       requestBody.presence_penalty = this.config.presencePenalty
     }
 
+    LoggerService.debug(
+      `\n📤 OpenAI request body:\n${JSON.stringify(requestBody, null, 2)}`
+    )
     const response = await this.client.chat.completions.create(requestBody)
 
     LoggerService.info(`🔍 Total Tokens: ${response.usage?.total_tokens}`)

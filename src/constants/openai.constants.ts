@@ -68,4 +68,6 @@ Rules:
 - QA Focus is required (3-7 bullets). If unknown, use "- Not tested (not run)".
 - Add Notes only if risks/migrations/follow-ups are critical.
 - QA Focus bullets must start with a surface like "CLI: ..." or "UI: ...".
+- QA Focus should not mix "Not tested (not run)" with other bullets.
+- Changes should describe behavior, not internal mechanics (avoid "heuristics/templates/pipeline").
 `
