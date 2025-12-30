@@ -5,6 +5,7 @@ import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import GitService from './Git.service'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 import { CommitValidator } from '../validation/CommitValidator'
+import { CommitHeuristics } from '../heuristics/CommitHeuristics'
 
 type OpenAIConfig = Config['openai']
 type CommitConfig = Config['commit']
@@ -28,14 +29,6 @@ const VAGUE_SUBJECT_PATTERNS = [
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: changes$/i,
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: minor changes$/i,
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: various changes$/i,
-]
-
-const VAGUE_DESCRIPTION_WORDS = [
-  'handling',
-  'logic',
-  'process',
-  'stuff',
-  'various',
 ]
 
 const TRAILING_STOP_WORDS = [
@@ -102,6 +95,7 @@ export class OpenAIService {
   private commitConfig: CommitConfig
   private options: OpenAIOptions
   private validator: CommitValidator
+  private heuristics: CommitHeuristics
 
   constructor(config: Config, options: OpenAIOptions) {
     this.config = config.openai
@@ -109,6 +103,7 @@ export class OpenAIService {
     this.client = new OpenAI({ apiKey: this.config.apiKey })
     this.options = options
     this.validator = new CommitValidator(this.commitConfig)
+    this.heuristics = new CommitHeuristics()
   }
 
   /**
@@ -173,81 +168,6 @@ export class OpenAIService {
     return (
       stats.filesChanged >= 4 || linesChanged >= 150 || hasUserContext
     )
-  }
-
-  private isInternalToolingChange(diff: ProcessedDiff): boolean {
-    const paths = diff.signals?.topFiles?.length
-      ? diff.signals.topFiles
-      : diff.signals?.nameStatus?.map((entry) => entry.path) || []
-    if (paths.length === 0) {
-      return false
-    }
-
-    const internalPrefixes = [
-      'src/services/',
-      'src/processors/',
-      'src/types/',
-      'src/constants/',
-    ]
-    const userFacingHints = ['src/cli.ts', 'src/cli/']
-
-    const hasUserFacingHint = paths.some((path) =>
-      userFacingHints.some((hint) => path.startsWith(hint))
-    )
-    if (hasUserFacingHint) {
-      return false
-    }
-
-    const internalCount = paths.filter((path) =>
-      internalPrefixes.some((prefix) => path.startsWith(prefix))
-    ).length
-
-    return internalCount / paths.length >= 0.5
-  }
-
-  private isDocsOnlyChange(diff: ProcessedDiff): boolean {
-    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
-    if (paths.length === 0) {
-      return false
-    }
-
-    return paths.every((path) => {
-      if (path === 'README.md') return true
-      if (/^docs\//.test(path)) return true
-      if (/\.md$/i.test(path)) return true
-      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
-      return false
-    })
-  }
-
-  private isDocsTouched(diff: ProcessedDiff): boolean {
-    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
-    return paths.some((path) => {
-      if (path === 'README.md') return true
-      if (/^docs\//.test(path)) return true
-      if (/\.md$/i.test(path)) return true
-      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
-      return false
-    })
-  }
-
-  private getDocsTouchedList(diff: ProcessedDiff): string[] {
-    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
-    return paths.filter((path) => {
-      if (path === 'README.md') return true
-      if (/^docs\//.test(path)) return true
-      if (/\.md$/i.test(path)) return true
-      if (/^CHANGELOG/i.test(path) || /^HISTORY/i.test(path)) return true
-      return false
-    })
-  }
-
-  private getDocsScope(diff: ProcessedDiff): string {
-    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
-    if (paths.some((path) => path === 'README.md')) {
-      return 'readme'
-    }
-    return 'docs'
   }
 
   /**
@@ -401,20 +321,20 @@ export class OpenAIService {
       parts.push(`Scope hint: ${scopeHint}`)
     }
 
-    if (this.isDocsOnlyChange(diff)) {
+    if (this.heuristics.isDocsOnlyChange(diff)) {
       parts.push('Type hint: docs (documentation-only change)')
-      parts.push(`Scope hint: ${this.getDocsScope(diff)}`)
+      parts.push(`Scope hint: ${this.heuristics.getDocsScope(diff)}`)
     }
 
-    if (this.isDocsOnlyChange(diff)) {
+    if (this.heuristics.isDocsOnlyChange(diff)) {
       parts.push('Type hint: docs (documentation-only change)')
-      parts.push(`Scope hint: ${this.getDocsScope(diff)}`)
-    } else if (this.isInternalToolingChange(diff)) {
+      parts.push(`Scope hint: ${this.heuristics.getDocsScope(diff)}`)
+    } else if (this.heuristics.isInternalToolingChange(diff)) {
       parts.push('Type hint: refactor (internal tooling change)')
     }
 
-    if (this.isDocsTouched(diff) && !this.isDocsOnlyChange(diff)) {
-      const docsTouched = this.getDocsTouchedList(diff).slice(0, 3)
+    if (this.heuristics.isDocsTouched(diff) && !this.heuristics.isDocsOnlyChange(diff)) {
+      const docsTouched = this.heuristics.getDocsTouchedList(diff).slice(0, 3)
       if (docsTouched.length > 0) {
         parts.push(`Docs touched: ${docsTouched.join(', ')}`)
       }
@@ -615,21 +535,6 @@ export class OpenAIService {
     return `rename ${rawSource} → ${rawTarget}`
   }
 
-  private isVagueDescription(description: string): boolean {
-    const tokens = description
-      .split(/\s+/)
-      .map((token) => token.toLowerCase())
-      .filter(Boolean)
-    if (tokens.length === 0) return true
-    if (tokens.every((token) => VAGUE_DESCRIPTION_WORDS.includes(token))) {
-      return true
-    }
-    if (tokens.length <= 3) {
-      return tokens.some((token) => VAGUE_DESCRIPTION_WORDS.includes(token))
-    }
-    return false
-  }
-
   private refineDescriptionWording(
     description: string,
     context: {
@@ -700,25 +605,6 @@ export class OpenAIService {
     return refined.replace(/\s+/g, ' ').trim()
   }
 
-  private isQualityTuningChange(diff: ProcessedDiff): boolean {
-    const paths = diff.signals?.nameStatus?.map((entry) => entry.path) || []
-    const touched = paths.some((path) =>
-      [
-        'src/services/OpenAI.service.ts',
-        'src/constants/openai.constants.ts',
-        'src/processors/Diff.processor.ts',
-        'src/services/Git.service.ts',
-      ].includes(path)
-    )
-    if (!touched) {
-      return false
-    }
-    const snippets = diff.signals?.patchSnippets?.join('\n') || ''
-    return /(validateCommitMessage|repairSubject|truncateSubject|scopeRules|templates|prompt|banned|vague|refineDescription)/.test(
-      snippets
-    )
-  }
-
   private buildBehaviorTemplateSubject(diff: ProcessedDiff): string | undefined {
     if (!this.commitConfig.enableBehaviorTemplates) {
       return undefined
@@ -772,13 +658,13 @@ export class OpenAIService {
       VAGUE_SUBJECT_PATTERNS.some((pattern) =>
         pattern.test(`${type}${scope}: ${description}`)
       ) ||
-      this.isVagueDescription(description)
+      this.heuristics.isVagueDescription(description)
     ) {
       const template = this.buildBehaviorTemplateSubject(diff)
       if (template) {
         return template
       }
-      if (this.isDocsTouched(diff) && !this.isDocsOnlyChange(diff)) {
+      if (this.heuristics.isDocsTouched(diff) && !this.heuristics.isDocsOnlyChange(diff)) {
         description = 'refine docs change detection for commit subjects'
       } else {
         description = 'align commit flow'
@@ -786,9 +672,9 @@ export class OpenAIService {
     }
 
     description = this.refineDescriptionWording(description, {
-      docsTouched: this.isDocsTouched(diff),
-      internalChange: this.isInternalToolingChange(diff),
-      qualityTuning: this.isQualityTuningChange(diff),
+      docsTouched: this.heuristics.isDocsTouched(diff),
+      internalChange: this.heuristics.isInternalToolingChange(diff),
+      qualityTuning: this.heuristics.isQualityTuningChange(diff),
     })
 
     const prefix = `${type}${scope}: `
@@ -813,14 +699,14 @@ export class OpenAIService {
     diff: ProcessedDiff,
     candidate: string
   ): string | undefined {
-    if (!this.isDocsOnlyChange(diff)) {
+    if (!this.heuristics.isDocsOnlyChange(diff)) {
       return undefined
     }
 
     const normalized = this.normalizeSubject(candidate)
     const match = normalized.match(SUBJECT_PARSE_PATTERN)
     const description = match ? match[3] : 'update documentation'
-    const scope = this.getDocsScope(diff)
+    const scope = this.heuristics.getDocsScope(diff)
     const subject = this.truncateSubjectToMax(
       `docs(${scope}): ${description}`,
       this.commitConfig.maxTitleLength
@@ -1068,8 +954,8 @@ export class OpenAIService {
       ? 'gpt-4o'
       : this.config.model
     const retryTemperature = Math.min(this.config.temperature, 0.1)
-    const internalChange = this.isInternalToolingChange(diff)
-    const docsOnly = this.isDocsOnlyChange(diff)
+    const internalChange = this.heuristics.isInternalToolingChange(diff)
+    const docsOnly = this.heuristics.isDocsOnlyChange(diff)
 
     let lastMessage: CommitMessage | undefined
     let lastErrors: string[] = []
