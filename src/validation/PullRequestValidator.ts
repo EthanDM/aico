@@ -7,8 +7,9 @@ interface ValidationResult {
 
 const TITLE_PATTERN = /^(fix|feat|refactor|chore|perf|docs)\([a-z0-9-]+\):\s+\S+/i
 const FILE_PATH_PATTERN = /(src\/|lib\/|packages\/|\.ts\b|\.tsx\b|\.js\b|\.jsx\b|\.json\b|\.md\b)/
-const FILEISH_HEADING_PATTERN = /(\.md\b|readme\b|services?\b|constants?\b|cli\b|heuristics?\b|processors?\b|prompts?\b|types?\b|validation\b|tests?\b|config\b|scripts?\b|dist\b)/i
+const FILEISH_HEADING_PATTERN = /(\.md\b|readme\b|services?\b|constants?\b|cli\b|heuristics?\b|processors?\b|prompts?\b|types?\b|validation\b|tests?\b|config\b|scripts?\b|dist\b|build\b|package\b|tsconfig\b|license\b)/i
 const QA_GENERIC_PREFIX = /^(verified|ensured|checked|tested|confirmed)\b/i
+const QA_SURFACE_PATTERN = /^[^:]{2,25}:\s+\S+/
 
 export class PullRequestValidator {
   public validate(
@@ -33,6 +34,19 @@ export class PullRequestValidator {
     }
 
     if (template === 'default') {
+      const extraSections = Array.from(sections.keys()).filter(
+        (key) =>
+          !['summary', 'changes', 'qa focus', 'notes', 'screenshots'].includes(
+            key
+          )
+      )
+      if (extraSections.length > 0) {
+        errors.push(
+          `Default template should not include grouped sections: ${extraSections.join(
+            ', '
+          )}`
+        )
+      }
       const changes = sections.get('changes') || ''
       if (!changes.trim()) {
         errors.push('Missing Changes section')
@@ -113,6 +127,12 @@ export class PullRequestValidator {
     if (qaBullets.some((bullet) => QA_GENERIC_PREFIX.test(bullet))) {
       errors.push('QA Focus bullets should be executable, not generic')
     }
+    if (
+      !notTested &&
+      !qaBullets.some((bullet) => QA_SURFACE_PATTERN.test(bullet))
+    ) {
+      errors.push('QA Focus bullets should start with a surface like "CLI: ..."')
+    }
 
     return { valid: errors.length === 0, errors }
   }
@@ -158,6 +178,10 @@ export class PullRequestValidator {
   }
 
   private isFileishHeading(heading: string): boolean {
-    return FILEISH_HEADING_PATTERN.test(heading)
+    const normalized = heading.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (FILEISH_HEADING_PATTERN.test(heading)) {
+      return true
+    }
+    return FILEISH_HEADING_PATTERN.test(normalized)
   }
 }

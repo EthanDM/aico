@@ -38,6 +38,7 @@ const INFRA_GROUPS = new Set([
   'build',
   'node_modules',
 ])
+const INFRA_GROUP_PATTERN = /^(readme|changelog|license|package|tsconfig|config|cli|dist|build)/
 
 export class PullRequestHeuristics {
   constructor(
@@ -180,7 +181,11 @@ export class PullRequestHeuristics {
       const area =
         parts[0] === 'src' && parts.length > 1 ? parts[1] : parts[0]
       const normalized = area.toLowerCase().replace(/[^a-z0-9-]/g, '')
-      if (!normalized || INFRA_GROUPS.has(normalized)) {
+      if (
+        !normalized ||
+        INFRA_GROUPS.has(normalized) ||
+        INFRA_GROUP_PATTERN.test(normalized)
+      ) {
         continue
       }
       counts.set(normalized, (counts.get(normalized) || 0) + 1)
@@ -198,11 +203,11 @@ export class PullRequestHeuristics {
   ): PullRequestTemplate {
     const linesChanged = diff.stats.additions + diff.stats.deletions
     const isLarge = diff.stats.filesChanged >= 8 || linesChanged >= 200
-    const isGrouped = groupings.length >= 2 && isLarge
     const isSubtle = /(race|stale|timing|concurr|debounce|throttle)/.test(
       contextText
     )
     if (isSubtle) return 'subtle-bug'
+    const isGrouped = groupings.length >= 2 && isLarge
     if (isGrouped) return 'grouped'
     return 'default'
   }

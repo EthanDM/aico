@@ -282,6 +282,7 @@ export class PromptBuilder {
       'Use the shortest template that preserves clarity.',
       'Use Markdown headings with "###" and bullet lists.',
       'Group headings must be product/feature areas, not files or code layers.',
+      'QA Focus bullets must start with a surface like "CLI: ..." or "UI: ..." and be executable checks.',
     ]
 
     const branchName = await this.git.getBranchName()
@@ -310,7 +311,7 @@ export class PromptBuilder {
       parts.push(`Risk level: ${hints.riskLevel}`)
     }
     if (hints?.template) {
-      parts.push(`Template: ${hints.template}`)
+      parts.push(`Template: ${hints.template} (do not change)`)
     }
     if (hints?.groupings && hints.groupings.length > 0) {
       parts.push(`Grouping areas: ${hints.groupings.join(', ')}`)
