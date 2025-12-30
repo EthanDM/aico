@@ -7,6 +7,7 @@ import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 import { CommitValidator } from '../validation/CommitValidator'
 import { CommitHeuristics } from '../heuristics/CommitHeuristics'
 import { ScopeInferrer } from '../heuristics/ScopeInferrer'
+import { SubjectRepairer } from '../validation/SubjectRepairer'
 
 type OpenAIConfig = Config['openai']
 type CommitConfig = Config['commit']
@@ -32,55 +33,6 @@ const VAGUE_SUBJECT_PATTERNS = [
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: various changes$/i,
 ]
 
-const TRAILING_STOP_WORDS = [
-  'and',
-  'or',
-  'with',
-  'for',
-  'to',
-  'in',
-  'on',
-  'at',
-  'from',
-  'into',
-  'by',
-]
-
-const TASTE_VERB_REWRITES: Array<[RegExp, string]> = [
-  [/\badjust\b/gi, 'refine'],
-  [/\btweak\b/gi, 'refine'],
-  [/\bimprove\b/gi, 'tighten'],
-]
-
-const TASTE_PHRASE_REWRITES: Array<[RegExp, string]> = [
-  [/\badjust\s+(.+?)\s+behavior\b/gi, 'refine $1'],
-  [/\badjust\s+(.+?)\s+parameters\b/gi, 'refine $1'],
-  [/\badd\s+(.+?)\s+logic\b/gi, 'add $1'],
-  [/\badd\s+(.+?)\s+handling\b/gi, 'support $1'],
-  [/\bupdate\s+(.+?)\s+handling\b/gi, 'refine $1'],
-]
-
-const PREFERRED_VERBS = [
-  'refine',
-  'tighten',
-  'harden',
-  'clarify',
-  'standardize',
-  'rename',
-  'remove',
-  'support',
-  'detect',
-  'prevent',
-]
-
-const DISCOURAGED_VERBS = [
-  'implement',
-  'adjust',
-  'handle',
-  'process',
-  'manage',
-]
-
 interface OpenAIOptions {
   context?: boolean | string
   noAutoStage?: boolean
@@ -98,6 +50,7 @@ export class OpenAIService {
   private validator: CommitValidator
   private heuristics: CommitHeuristics
   private scopeInferrer: ScopeInferrer
+  private repairer: SubjectRepairer
 
   constructor(config: Config, options: OpenAIOptions) {
     this.config = config.openai
@@ -107,6 +60,12 @@ export class OpenAIService {
     this.validator = new CommitValidator(this.commitConfig)
     this.heuristics = new CommitHeuristics()
     this.scopeInferrer = new ScopeInferrer(this.commitConfig.scopeRules)
+    this.repairer = new SubjectRepairer(
+      this.commitConfig,
+      this.heuristics,
+      this.scopeInferrer,
+      this.validator
+    )
   }
 
   /**
@@ -402,372 +361,6 @@ export class OpenAIService {
     })
   }
 
-  private normalizeSubject(candidate: string): string {
-    return candidate.split('\n')[0]?.replace(/\s+/g, ' ').trim() || ''
-  }
-
-  private stripFilePaths(text: string): string {
-    let cleaned = text
-    cleaned = cleaned.replace(/[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/g, '')
-    cleaned = cleaned.replace(/[A-Za-z0-9._-]+\\[A-Za-z0-9._\\-]+/g, '')
-    cleaned = cleaned.replace(/\b[\w-]+\.[a-z][a-z0-9]{1,4}\b/gi, '')
-    return cleaned
-  }
-
-  private removeBannedWords(text: string): string {
-    const bannedSubjectPattern = new RegExp(
-      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
-      'gi'
-    )
-    return text.replace(bannedSubjectPattern, '')
-  }
-
-  private normalizeRenameDescription(description: string): string {
-    const normalized = description.replace(/\s+/g, ' ').trim()
-    // Examples: "replace A with B" -> "rename A to B", "A -> B" -> "rename A to B".
-    const replaceMatch = normalized.match(
-      /^replace\s+(.+?)\s+with\s+(.+)$/i
-    )
-    if (replaceMatch) {
-      return `rename ${replaceMatch[1]} to ${replaceMatch[2]}`
-    }
-
-    const renameMatch = normalized.match(/^rename\s+(.+?)\s+to\s+(.+)$/i)
-    if (renameMatch) {
-      return `rename ${renameMatch[1]} to ${renameMatch[2]}`
-    }
-
-    const arrowMatch = normalized.match(/^(.+?)\s*(?:->|→)\s*(.+)$/)
-    if (arrowMatch) {
-      return `rename ${arrowMatch[1]} to ${arrowMatch[2]}`
-    }
-
-    return description
-  }
-
-  private shortenRenamePair(source: string, target: string): {
-    source: string
-    target: string
-  } {
-    const stripPrefix = (value: string) =>
-      value.replace(/^enable/i, '').replace(/^\W+/, '').trim() || value
-    return {
-      source: stripPrefix(source),
-      target: stripPrefix(target),
-    }
-  }
-
-  private buildRenameDescription(
-    description: string,
-    maxLength: number,
-    prefixLength: number
-  ): string {
-    const match = description.match(/^rename\s+(.+?)\s+to\s+(.+)$/i)
-    if (!match) {
-      return description
-    }
-
-    const rawSource = this.stripFilePaths(match[1]).trim()
-    const rawTarget = this.stripFilePaths(match[2]).trim()
-    if (!rawSource || !rawTarget) {
-      return description
-    }
-
-    const fullDescription = `rename ${rawSource} to ${rawTarget}`
-    if (prefixLength + fullDescription.length <= maxLength) {
-      return fullDescription
-    }
-
-    const arrowDescription = `rename ${rawSource} → ${rawTarget}`
-    if (prefixLength + arrowDescription.length <= maxLength) {
-      return arrowDescription
-    }
-
-    const shortened = this.shortenRenamePair(rawSource, rawTarget)
-    const shortenedDescription = `rename ${shortened.source} → ${shortened.target}`
-    if (prefixLength + shortenedDescription.length <= maxLength) {
-      return shortenedDescription
-    }
-
-    return `rename ${rawSource} → ${rawTarget}`
-  }
-
-  private refineDescriptionWording(
-    description: string,
-    context: {
-      docsTouched?: boolean
-      internalChange?: boolean
-      qualityTuning?: boolean
-    }
-  ): string {
-    let refined = description
-
-    for (const [pattern, replacement] of TASTE_PHRASE_REWRITES) {
-      refined = refined.replace(pattern, replacement)
-    }
-
-    refined = this.normalizeVerbChoice(refined, context)
-    refined = this.tightenNouns(refined)
-
-    for (const [pattern, replacement] of TASTE_VERB_REWRITES) {
-      refined = refined.replace(pattern, replacement)
-    }
-
-    refined = refined.replace(/\bhandling\b/gi, 'support')
-    refined = refined.replace(/\bprocess\b/gi, '')
-    refined = refined.replace(/\bparameters?\b/gi, '')
-    refined = refined.replace(/\s+/g, ' ').trim()
-
-    if (context.docsTouched) {
-      refined = refined.replace(/\bdocumentation changes?\b/gi, 'docs changes')
-      refined = refined.replace(/\bdocs changes?\b/gi, 'docs change detection')
-    }
-
-    if (context.internalChange) {
-      refined = refined.replace(/\blogic\b/gi, 'validation')
-    }
-
-    return this.finalizeDescription(refined)
-  }
-
-  private normalizeVerbChoice(
-    description: string,
-    context: { docsTouched?: boolean; internalChange?: boolean; qualityTuning?: boolean }
-  ): string {
-    let refined = description
-    if (context.qualityTuning || context.internalChange) {
-      refined = refined.replace(/\bimplement\b/gi, 'refine')
-      refined = refined.replace(/\badd\b/gi, 'refine')
-    }
-    refined = refined.replace(/\badjust\b/gi, 'refine')
-    refined = refined.replace(/\bimprove\b/gi, 'tighten')
-    return refined
-  }
-
-  private tightenNouns(description: string): string {
-    let refined = description
-    refined = refined.replace(/\bdescription refinement\b/gi, 'description wording')
-    refined = refined.replace(/\bcommit messages\b/gi, 'commit subjects')
-    refined = refined.replace(/\bdocumentation changes?\b/gi, 'docs change detection')
-    refined = refined.replace(/\bvalidation process\b/gi, 'validation')
-    refined = refined.replace(/\bconfiguration handling\b/gi, 'config handling')
-    refined = refined.replace(/\bbehavior\b/gi, '')
-    return refined
-  }
-
-  private finalizeDescription(description: string): string {
-    let refined = description.replace(/\s+/g, ' ').trim()
-    refined = refined.replace(/[-:,.]+$/, '').trim()
-    refined = this.trimTrailingStopWord(refined)
-    return refined.replace(/\s+/g, ' ').trim()
-  }
-
-  private buildBehaviorTemplateSubject(diff: ProcessedDiff): string | undefined {
-    if (!this.commitConfig.enableBehaviorTemplates) {
-      return undefined
-    }
-    const paths = diff.signals?.topFiles?.length
-      ? diff.signals.topFiles
-      : diff.signals?.nameStatus?.map((entry) => entry.path) || []
-    const snippets = diff.signals?.patchSnippets?.join('\n') || ''
-
-    const translationsOnly =
-      paths.length > 0 &&
-      paths.every((path) => /^src\/translations\//.test(path))
-    if (translationsOnly) {
-      return 'feat(translations): add new copy strings'
-    }
-
-    const loggingSwap =
-      /console\./.test(snippets) && /AppLogger|LoggerService/.test(snippets)
-    if (loggingSwap && paths.length > 0 && paths.length <= 3) {
-      return 'chore(logging): standardize logging'
-    }
-
-    return undefined
-  }
-
-  private repairSubject(
-    diff: ProcessedDiff,
-    candidate: string
-  ): string | undefined {
-    const maxLength = this.commitConfig.maxTitleLength
-    const normalized = this.normalizeSubject(candidate)
-    const match = normalized.match(SUBJECT_PARSE_PATTERN)
-    if (!match) {
-      return undefined
-    }
-
-    const type = match[1]
-    const scope = match[2] || ''
-    let description = match[3]
-
-    description = this.stripFilePaths(description)
-    description = this.removeBannedWords(description)
-    description = this.normalizeRenameDescription(description)
-    description = description.replace(/\s+/g, ' ').trim()
-    description = description
-      .replace(/\b(from|in|on|at|within|inside)\s*$/i, '')
-      .trim()
-
-    if (
-      !description ||
-      VAGUE_SUBJECT_PATTERNS.some((pattern) =>
-        pattern.test(`${type}${scope}: ${description}`)
-      ) ||
-      this.heuristics.isVagueDescription(description)
-    ) {
-      const template = this.buildBehaviorTemplateSubject(diff)
-      if (template) {
-        return template
-      }
-      if (this.heuristics.isDocsTouched(diff) && !this.heuristics.isDocsOnlyChange(diff)) {
-        description = 'refine docs change detection for commit subjects'
-      } else {
-        description = 'align commit flow'
-      }
-    }
-
-    description = this.refineDescriptionWording(description, {
-      docsTouched: this.heuristics.isDocsTouched(diff),
-      internalChange: this.heuristics.isInternalToolingChange(diff),
-      qualityTuning: this.heuristics.isQualityTuningChange(diff),
-    })
-
-    const prefix = `${type}${scope}: `
-    const renameDescription = this.buildRenameDescription(
-      description,
-      maxLength,
-      prefix.length
-    )
-    const subject = this.truncateSubjectToMax(
-      `${type}${scope}: ${renameDescription}`,
-      maxLength
-    )
-
-    if (!this.validator.isValidSubject(subject, maxLength)) {
-      return undefined
-    }
-
-    return subject
-  }
-
-  private repairDocsSubject(
-    diff: ProcessedDiff,
-    candidate: string
-  ): string | undefined {
-    if (!this.heuristics.isDocsOnlyChange(diff)) {
-      return undefined
-    }
-
-    const normalized = this.normalizeSubject(candidate)
-    const match = normalized.match(SUBJECT_PARSE_PATTERN)
-    const description = match ? match[3] : 'update documentation'
-    const scope = this.heuristics.getDocsScope(diff)
-    const subject = this.truncateSubjectToMax(
-      `docs(${scope}): ${description}`,
-      this.commitConfig.maxTitleLength
-    )
-
-    if (!this.validator.isValidSubject(subject, this.commitConfig.maxTitleLength)) {
-      return undefined
-    }
-
-    return subject
-  }
-
-  private truncateSubjectToMax(subject: string, maxLength: number): string {
-    if (subject.length <= maxLength) return subject
-    const match = subject.match(SUBJECT_PARSE_PATTERN)
-    if (!match) {
-      return subject.slice(0, maxLength).trim()
-    }
-
-    const type = match[1]
-    const scope = match[2] || ''
-    const description = match[3]
-    const prefix = `${type}${scope}: `
-    const allowed = Math.max(0, maxLength - prefix.length)
-
-    if (allowed === 0) {
-      return `${type}: align commit flow`.slice(0, maxLength).trim()
-    }
-
-    const rawSlice = description.slice(0, allowed)
-    const lastSpaceIndex = rawSlice.lastIndexOf(' ')
-    let candidate =
-      lastSpaceIndex > 0
-        ? rawSlice.slice(0, lastSpaceIndex).trim()
-        : rawSlice.trim()
-    candidate = candidate.replace(/[-:,.]+$/, '').trim()
-    candidate = this.trimTrailingStopWord(candidate)
-    const cleaned = candidate.replace(/[-:,.]+$/, '').trim()
-    if (!cleaned) {
-      return `${type}${scope}: align commit flow`.slice(0, maxLength).trim()
-    }
-    return `${prefix}${cleaned}`.trim()
-  }
-
-  private trimTrailingStopWord(text: string): string {
-    const words = text.split(/\s+/).filter(Boolean)
-    if (words.length === 0) return text
-    while (words.length > 1) {
-      const lastWord = words[words.length - 1].toLowerCase()
-      if (!TRAILING_STOP_WORDS.includes(lastWord)) {
-        break
-      }
-      words.pop()
-    }
-    return words.join(' ')
-  }
-
-  private buildSafeFallbackSubject(
-    diff: ProcessedDiff,
-    candidate?: string
-  ): string {
-    const maxLength = this.commitConfig.maxTitleLength
-    const candidateSubject = candidate
-      ? this.normalizeSubject(candidate)
-      : ''
-
-    if (this.validator.isValidSubject(candidateSubject, maxLength)) {
-      return candidateSubject
-    }
-
-    const truncatedCandidate = this.truncateSubjectToMax(
-      candidateSubject,
-      maxLength
-    )
-    if (this.validator.isValidSubject(truncatedCandidate, maxLength)) {
-      return truncatedCandidate
-    }
-
-    const scopeHint = this.scopeInferrer.infer(
-      diff.signals?.topFiles?.length
-        ? diff.signals.topFiles
-        : diff.signals?.nameStatus?.map((entry) => entry.path) || []
-    )
-
-    const baseDescription = 'align commit flow'
-    const preferredType = scopeHint ? 'refactor' : 'chore'
-    const scoped = scopeHint
-      ? `${preferredType}(${scopeHint}): ${baseDescription}`
-      : `${preferredType}: ${baseDescription}`
-
-    const scopedTruncated = this.truncateSubjectToMax(scoped, maxLength)
-    if (this.validator.isValidSubject(scopedTruncated, maxLength)) {
-      return scopedTruncated
-    }
-
-    const fallback = `chore: ${baseDescription}`
-    const fallbackTruncated = this.truncateSubjectToMax(fallback, maxLength)
-    if (this.validator.isValidSubject(fallbackTruncated, maxLength)) {
-      return fallbackTruncated
-    }
-
-    return 'chore: align commit flow'
-  }
-
   /**
    * Parses the commit message from the OpenAI response.
    *
@@ -993,14 +586,6 @@ export class OpenAIService {
       const parsedMessage = this.parseCommitMessage(rawContent)
       lastMessage = parsedMessage
 
-      const templateSubject = this.buildBehaviorTemplateSubject(diff)
-      if (
-        templateSubject &&
-        this.validator.isValidSubject(templateSubject, this.commitConfig.maxTitleLength)
-      ) {
-        return { message: { title: templateSubject, body: undefined } }
-      }
-
       const validation = this.validator.validate(parsedMessage, {
         maxTitleLength: this.commitConfig.maxTitleLength,
         includeBodyMode: this.commitConfig.includeBody,
@@ -1028,7 +613,7 @@ export class OpenAIService {
         return { message: subjectOnly }
       }
 
-      const docsRepaired = this.repairDocsSubject(diff, parsedMessage.title)
+      const docsRepaired = this.repairer.repairDocs(diff, parsedMessage.title)
       if (docsRepaired) {
         LoggerService.debug(
           `Repaired subject locally: "${parsedMessage.title}" -> "${docsRepaired}"`
@@ -1036,7 +621,7 @@ export class OpenAIService {
         return { message: { title: docsRepaired, body: undefined } }
       }
 
-      const repaired = this.repairSubject(diff, parsedMessage.title)
+      const repaired = this.repairer.repair(diff, parsedMessage.title)
       if (repaired) {
         LoggerService.debug(
           `Repaired subject locally: "${parsedMessage.title}" -> "${repaired}"`
@@ -1063,7 +648,7 @@ export class OpenAIService {
       )
     if (!structuralFailure) {
       return {
-        title: this.buildSafeFallbackSubject(diff, lastMessage?.title),
+        title: this.repairer.buildFallback(diff, lastMessage?.title),
         body: undefined,
       }
     }
@@ -1074,7 +659,7 @@ export class OpenAIService {
     }
 
     return {
-      title: this.buildSafeFallbackSubject(diff, lastMessage?.title),
+      title: this.repairer.buildFallback(diff, lastMessage?.title),
       body: undefined,
     }
   }
