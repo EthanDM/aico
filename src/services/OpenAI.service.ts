@@ -8,6 +8,7 @@ import { CommitValidator } from '../validation/CommitValidator'
 import { CommitHeuristics } from '../heuristics/CommitHeuristics'
 import { ScopeInferrer } from '../heuristics/ScopeInferrer'
 import { SubjectRepairer } from '../validation/SubjectRepairer'
+import { PromptBuilder } from '../prompts/PromptBuilder'
 
 type OpenAIConfig = Config['openai']
 type CommitConfig = Config['commit']
@@ -51,6 +52,7 @@ export class OpenAIService {
   private heuristics: CommitHeuristics
   private scopeInferrer: ScopeInferrer
   private repairer: SubjectRepairer
+  private promptBuilder: PromptBuilder
 
   constructor(config: Config, options: OpenAIOptions) {
     this.config = config.openai
@@ -66,6 +68,12 @@ export class OpenAIService {
       this.scopeInferrer,
       this.validator
     )
+    this.promptBuilder = new PromptBuilder(
+      config,
+      this.heuristics,
+      this.scopeInferrer,
+      GitService
+    )
   }
 
   /**
@@ -76,43 +84,6 @@ export class OpenAIService {
    * @param isMerge - Whether this is explicitly a merge commit
    * @returns Information about the merge and conflicts, if any
    */
-  private async detectMergeInfo(
-    diff: ProcessedDiff,
-    userMessage?: string,
-    isMerge: boolean = false
-  ): Promise<{
-    isMerge: boolean
-    mergeInfo?: string[]
-    sourceBranch?: string
-    targetBranch?: string
-  }> {
-    if (!isMerge) {
-      return { isMerge: false }
-    }
-
-    const mergeInfo: string[] = []
-    let sourceBranch: string | undefined
-    let targetBranch: string | undefined
-
-    // Try to get source and target branches
-    try {
-      const mergeHeads = await GitService.getMergeHeads()
-      if (mergeHeads.source && mergeHeads.target) {
-        sourceBranch = mergeHeads.source
-        targetBranch = mergeHeads.target
-        mergeInfo.push(`Merging from ${sourceBranch} into ${targetBranch}`)
-      }
-    } catch (error) {
-      LoggerService.debug(`Could not determine merge branches: ${error}`)
-    }
-
-    // For merge commits, we'll just state it's a clean merge
-    mergeInfo.push('\nClean merge with no conflicts')
-
-    return { isMerge, mergeInfo, sourceBranch, targetBranch }
-  }
-
-
   private shouldIncludeBody(
     mode: CommitConfig['includeBody'],
     stats: ProcessedDiff['stats'],
@@ -130,218 +101,6 @@ export class OpenAIService {
     return (
       stats.filesChanged >= 4 || linesChanged >= 150 || hasUserContext
     )
-  }
-
-  /**
-   * Builds the prompt for the OpenAI API.
-   *
-   * @param diff - The diff to generate a commit message for.
-   * @param userMessage - Optional user-provided message for guidance.
-   * @param includeBodyAllowed - Whether a body is allowed for this commit.
-   * @param includeBodyMode - The includeBody policy mode.
-   * @returns The prompt for the OpenAI API.
-   */
-  private async buildPrompt(
-    diff: ProcessedDiff,
-    userMessage: string | undefined,
-    includeBodyAllowed: boolean,
-    includeBodyMode: CommitConfig['includeBody']
-  ): Promise<string> {
-    const parts: string[] = [
-      'Generate a conventional commit message for the changes below.',
-    ]
-
-    // Add branch context for scope hints
-    const branchName = await GitService.getBranchName()
-    if (
-      branchName &&
-      branchName !== 'main' &&
-      branchName !== 'master' &&
-      branchName !== 'develop'
-    ) {
-      // Extract potential scope from branch name
-      const branchParts = branchName.split(/[-_/]/)
-      const potentialScope = branchParts.find(
-        (part) =>
-          ![
-            'feat',
-            'fix',
-            'chore',
-            'docs',
-            'style',
-            'refactor',
-            'test',
-            'ci',
-          ].includes(part.toLowerCase())
-      )
-
-      if (potentialScope && potentialScope.length > 2) {
-        parts.push(
-          `Branch: ${branchName} (scope hint: ${potentialScope.toLowerCase()})`
-        )
-      } else {
-        parts.push(`Branch: ${branchName}`)
-      }
-    }
-
-    // Check if this is a merge commit
-    const {
-      isMerge: confirmed,
-      mergeInfo,
-      sourceBranch,
-      targetBranch,
-    } = await this.detectMergeInfo(
-      diff,
-      userMessage,
-      this.options.merge
-    )
-
-    if (confirmed) {
-      parts.push('This is a merge commit.')
-      if (sourceBranch && targetBranch) {
-        parts.push(`Merge: ${sourceBranch} → ${targetBranch}`)
-      }
-      if (mergeInfo) {
-        parts.push(...mergeInfo)
-      }
-    }
-
-    // Add user guidance if provided - but keep it focused
-    if (userMessage) {
-      parts.push('User context:')
-      parts.push(userMessage)
-    }
-
-    if (includeBodyMode === 'never') {
-      parts.push('Body is not allowed for this commit.')
-    } else if (!includeBodyAllowed) {
-      parts.push('Return only the subject line.')
-    }
-
-    parts.push(`Max subject length: ${this.commitConfig.maxTitleLength} characters.`)
-
-    if (includeBodyMode === 'always') {
-      const recentCommits = await GitService.getRecentCommits(5)
-
-      if (recentCommits.length > 0) {
-        LoggerService.debug('\n🔍 Recent commits retrieved:')
-        recentCommits.forEach((commit, index) => {
-          const firstLine = commit.message.split('\n')[0]
-          LoggerService.debug(`${index + 1}. ${firstLine}`)
-        })
-      }
-
-      const goodExamples = recentCommits
-        .filter((commit) => {
-          const firstLine = commit.message.split('\n')[0]
-          const strictMatch =
-            /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\(.+\))?: .+/.test(
-              firstLine
-            )
-          const lenientMatch =
-            /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)[:\s].+/.test(
-              firstLine
-            )
-
-          const matches = strictMatch || lenientMatch
-          LoggerService.debug(
-            `Checking: "${firstLine}" -> ${matches ? 'MATCH' : 'NO MATCH'}`
-          )
-
-          return matches
-        })
-        .slice(0, 3)
-
-      LoggerService.debug(
-        `\n📊 Filtered to ${goodExamples.length} good examples`
-      )
-
-      if (goodExamples.length > 0) {
-        parts.push('Recent commits (style only):')
-        goodExamples.forEach((commit) => {
-          const shortMessage = commit.message.split('\n')[0]
-          parts.push(`- ${shortMessage}`)
-        })
-      } else if (recentCommits.length > 0) {
-        LoggerService.debug(
-          '\n⚠️  No conventional commits found in recent history'
-        )
-      }
-    }
-
-    const nameStatus = diff.signals?.nameStatus || []
-    const numStat = diff.signals?.numStat || []
-    const topFiles = diff.signals?.topFiles || []
-    const patchSnippets = diff.signals?.patchSnippets || []
-
-    const scopeHint = this.scopeInferrer.infer(
-      topFiles.length > 0
-        ? topFiles
-        : nameStatus.map((entry) => entry.path)
-    )
-    if (scopeHint) {
-      parts.push(`Scope hint: ${scopeHint}`)
-    }
-
-    if (this.heuristics.isDocsOnlyChange(diff)) {
-      parts.push('Type hint: docs (documentation-only change)')
-      parts.push(`Scope hint: ${this.heuristics.getDocsScope(diff)}`)
-    }
-
-    if (this.heuristics.isDocsOnlyChange(diff)) {
-      parts.push('Type hint: docs (documentation-only change)')
-      parts.push(`Scope hint: ${this.heuristics.getDocsScope(diff)}`)
-    } else if (this.heuristics.isInternalToolingChange(diff)) {
-      parts.push('Type hint: refactor (internal tooling change)')
-    }
-
-    if (this.heuristics.isDocsTouched(diff) && !this.heuristics.isDocsOnlyChange(diff)) {
-      const docsTouched = this.heuristics.getDocsTouchedList(diff).slice(0, 3)
-      if (docsTouched.length > 0) {
-        parts.push(`Docs touched: ${docsTouched.join(', ')}`)
-      }
-    }
-
-    if (nameStatus.length > 0) {
-      parts.push('Changes (name-status):')
-      nameStatus.forEach((entry) => {
-        if (entry.status === 'R' || entry.status === 'C') {
-          const oldPath = entry.oldPath || 'unknown'
-          parts.push(`- ${entry.status} ${oldPath} -> ${entry.path}`)
-        } else {
-          parts.push(`- ${entry.status} ${entry.path}`)
-        }
-      })
-    }
-
-    parts.push('Stats:')
-    parts.push(`- files: ${diff.stats.filesChanged}`)
-    parts.push(`- insertions: ${diff.stats.additions}`)
-    parts.push(`- deletions: ${diff.stats.deletions}`)
-
-    if (topFiles.length > 0) {
-      parts.push('Top changes:')
-      topFiles.forEach((path) => {
-        const stats = numStat.find((entry) => entry.path === path)
-        if (stats) {
-          parts.push(`- ${path} (+${stats.insertions}/-${stats.deletions})`)
-        } else {
-          parts.push(`- ${path}`)
-        }
-      })
-    }
-
-    if (patchSnippets.length > 0) {
-      parts.push('Top diffs (snippets):')
-      patchSnippets.slice(0, 3).forEach((snippet) => {
-        parts.push(snippet)
-      })
-    } else if (diff.summary) {
-      parts.push('Summary:')
-      parts.push(diff.summary)
-    }
-
-    return parts.join('\n')
   }
 
   /**
@@ -482,11 +241,12 @@ export class OpenAIService {
       userMessage
     )
 
-    const prompt = await this.buildPrompt(
+    const prompt = await this.promptBuilder.buildCommitPrompt(
       diff,
       userMessage,
       includeBodyAllowed,
-      this.commitConfig.includeBody
+      this.commitConfig.includeBody,
+      this.options.merge
     )
 
     const baseMessages: ChatCompletionMessageParam[] = [
@@ -675,7 +435,6 @@ export class OpenAIService {
     context: string,
     diff?: ProcessedDiff
   ): Promise<string> {
-    const prefixHint = this.inferBranchPrefix(context)
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -718,7 +477,7 @@ Examples of bad branch names:
       },
       {
         role: 'user',
-        content: await this.buildBranchPrompt(context, diff, prefixHint),
+        content: await this.promptBuilder.buildBranchPrompt(context, diff),
       },
     ]
 
@@ -765,6 +524,19 @@ Examples of bad branch names:
       const hasValidPrefix = validPrefixes.some((prefix) =>
         normalizedBranch.startsWith(prefix)
       )
+
+      // Infer the prefix hint the same way promptBuilder does
+      const text = context.toLowerCase()
+      const prefixHint = /(fix|bug|crash|broken|regression)/.test(text)
+        ? 'fix/'
+        : /(refactor|cleanup|rename|restructure)/.test(text)
+          ? 'refactor/'
+          : /(docs|readme|changelog)/.test(text)
+            ? 'docs/'
+            : /(style|format|lint|eslint|prettier)/.test(text)
+              ? 'style/'
+              : 'feat/'
+
       if (!hasValidPrefix) {
         normalizedBranch = normalizedBranch.replace(/^[^/]+\//, '')
         normalizedBranch = prefixHint + normalizedBranch.replace(/^\/+/, '')
@@ -801,76 +573,6 @@ Examples of bad branch names:
    * @param diff - Optional diff to consider
    * @returns The prompt for the OpenAI API
    */
-  private async buildBranchPrompt(
-    context: string,
-    diff: ProcessedDiff | undefined,
-    prefixHint: string
-  ): Promise<string> {
-    const parts = ['Generate a branch name based on the following context:']
-    parts.push(`\nContext: ${context}`)
-    parts.push(`\nPrefix hint: ${prefixHint}`)
-
-    if (diff) {
-      parts.push('\nChanges summary:')
-      parts.push(this.buildBranchDiffSummary(diff))
-    }
-
-    return parts.join('\n')
-  }
-
-  private buildBranchDiffSummary(diff: ProcessedDiff): string {
-    const nameStatus = diff.signals?.nameStatus || []
-    const numStat = diff.signals?.numStat || []
-    const topFiles = diff.signals?.topFiles || []
-
-    const parts: string[] = []
-
-    if (nameStatus.length > 0 && topFiles.length === 0) {
-      const maxEntries = 10
-      const shown = nameStatus.slice(0, maxEntries)
-      parts.push('Name-status:')
-      shown.forEach((entry) => {
-        if (entry.status === 'R' || entry.status === 'C') {
-          const oldPath = entry.oldPath || 'unknown'
-          parts.push(`- ${entry.status} ${oldPath} -> ${entry.path}`)
-        } else {
-          parts.push(`- ${entry.status} ${entry.path}`)
-        }
-      })
-      if (nameStatus.length > maxEntries) {
-        parts.push(`- ... +${nameStatus.length - maxEntries} more`)
-      }
-    }
-
-    parts.push('Stats:')
-    parts.push(`- files: ${diff.stats.filesChanged}`)
-    parts.push(`- insertions: ${diff.stats.additions}`)
-    parts.push(`- deletions: ${diff.stats.deletions}`)
-
-    if (topFiles.length > 0) {
-      parts.push('Top files:')
-      topFiles.forEach((path) => {
-        const stats = numStat.find((entry) => entry.path === path)
-        if (stats) {
-          parts.push(`- ${path} (+${stats.insertions}/-${stats.deletions})`)
-        } else {
-          parts.push(`- ${path}`)
-        }
-      })
-    }
-
-    return parts.join('\n')
-  }
-
-  private inferBranchPrefix(context: string): string {
-    const text = context.toLowerCase()
-    if (/(fix|bug|crash|broken|regression)/.test(text)) return 'fix/'
-    if (/(refactor|cleanup|rename|restructure)/.test(text))
-      return 'refactor/'
-    if (/(docs|readme|changelog)/.test(text)) return 'docs/'
-    if (/(style|format|lint|eslint|prettier)/.test(text)) return 'style/'
-    return 'feat/'
-  }
 }
 
 /**

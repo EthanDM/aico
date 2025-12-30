@@ -85,7 +85,7 @@ export class SubjectRepairer {
     private heuristics: CommitHeuristics,
     private scopeInferrer: ScopeInferrer,
     private validator: CommitValidator
-  ) {}
+  ) { }
 
   /**
    * Normalizes a subject by taking first line and cleaning whitespace.
