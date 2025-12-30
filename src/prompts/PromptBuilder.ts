@@ -274,6 +274,7 @@ export class PromptBuilder {
       testTouched?: boolean
       uiTouched?: boolean
       commitSubjects?: string[]
+      behaviorSummary?: string
     }
   ): Promise<string> {
     const parts: string[] = [
@@ -312,6 +313,9 @@ export class PromptBuilder {
     }
     if (hints?.template) {
       parts.push(`Template: ${hints.template} (do not change)`)
+    }
+    if (hints?.behaviorSummary) {
+      parts.push(`Behavior summary: ${hints.behaviorSummary}`)
     }
     if (hints?.groupings && hints.groupings.length > 0) {
       parts.push(`Grouping areas: ${hints.groupings.join(', ')}`)

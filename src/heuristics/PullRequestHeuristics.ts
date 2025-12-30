@@ -13,6 +13,7 @@ interface PullRequestHeuristicsResult {
   riskLevel: 'low' | 'med' | 'high'
   testTouched: boolean
   uiTouched: boolean
+  behaviorSummary?: string
 }
 
 const TYPE_MATCH = /^(fix|feat|refactor|chore|perf|docs)(\(.+\))?:\s+/i
@@ -64,6 +65,12 @@ export class PullRequestHeuristics {
     const testTouched = this.isTestTouched(paths)
     const uiTouched = this.isUiTouched(paths)
     const riskLevel = this.inferRiskLevel(paths, snippets)
+    const behaviorSummary = this.inferBehaviorSummary(
+      type,
+      scope,
+      commitSubjects,
+      userContext
+    )
 
     return {
       type,
@@ -74,7 +81,34 @@ export class PullRequestHeuristics {
       riskLevel,
       testTouched,
       uiTouched,
+      behaviorSummary,
     }
+  }
+
+  private inferBehaviorSummary(
+    type: PullRequestType,
+    scope: string,
+    commitSubjects: string[],
+    userContext?: string
+  ): string | undefined {
+    const context = userContext?.trim()
+    if (context) {
+      return `${this.capitalize(type)} ${scope} behavior: ${context}.`
+    }
+
+    const subject = commitSubjects.find((line) => line.trim().length > 0)
+    if (subject) {
+      const clean = subject.replace(TYPE_MATCH, '').trim()
+      if (clean) {
+        return `${this.capitalize(type)} ${scope} behavior: ${clean}.`
+      }
+    }
+
+    return undefined
+  }
+
+  private capitalize(value: string): string {
+    return value.charAt(0).toUpperCase() + value.slice(1)
   }
 
   private inferType(

@@ -122,6 +122,7 @@ export interface PullRequestHints {
   testTouched?: boolean
   uiTouched?: boolean
   commitSubjects?: string[]
+  behaviorSummary?: string
 }
 
 /**

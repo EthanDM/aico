@@ -358,6 +358,7 @@ export class CommitGeneratorService {
           testTouched: prHints.testTouched,
           uiTouched: prHints.uiTouched,
           commitSubjects,
+          behaviorSummary: prHints.behaviorSummary,
         }
       )
     }
