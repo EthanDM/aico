@@ -267,6 +267,9 @@ class WorkflowService {
         baseBranch,
         this.config.openai.model
       )
+      const commitSubjects = await GitService.getCommitSubjectsBetween(
+        baseBranch
+      )
 
       if (diff.stats.filesChanged === 0) {
         throw new Error('No changes detected between branch and base')
@@ -278,7 +281,8 @@ class WorkflowService {
       const prMessage = await this.commitGenerator.generatePullRequestMessage(
         diff,
         context,
-        baseBranch
+        baseBranch,
+        commitSubjects
       )
 
       console.log('\n🎯 Generated pull request title:')

@@ -186,6 +186,29 @@ class GitService {
     return this.git.raw(['diff', `${baseRef}...HEAD`])
   }
 
+  /**
+   * Gets commit subjects between base and head (excluding merges).
+   */
+  public async getCommitSubjectsBetween(
+    baseRef: string,
+    headRef: string = 'HEAD'
+  ): Promise<string[]> {
+    try {
+      const output = await this.git.raw([
+        'log',
+        '--no-merges',
+        '--pretty=%s',
+        `${baseRef}..${headRef}`,
+      ])
+      return output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    } catch (error) {
+      return []
+    }
+  }
+
   public async getBranchNameStatusRaw(
     baseRef: string
   ): Promise<NameStatusEntry[]> {

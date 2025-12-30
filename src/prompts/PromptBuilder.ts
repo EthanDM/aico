@@ -263,10 +263,24 @@ export class PromptBuilder {
   async buildPullRequestPrompt(
     context: string | undefined,
     diff: ProcessedDiff,
-    baseBranch?: string
+    baseBranch?: string,
+    hints?: {
+      type?: string
+      scope?: string
+      template?: string
+      platform?: string[]
+      riskLevel?: string
+      groupings?: string[]
+      testTouched?: boolean
+      uiTouched?: boolean
+      commitSubjects?: string[]
+    }
   ): Promise<string> {
     const parts: string[] = [
       'Generate a pull request title and description for the branch changes below.',
+      'Title format: <type>(<scope>): <outcome>.',
+      'Use the shortest template that preserves clarity.',
+      'Use Markdown headings with "###" and bullet lists.',
     ]
 
     const branchName = await this.git.getBranchName()
@@ -280,6 +294,37 @@ export class PromptBuilder {
     if (context) {
       parts.push('User context:')
       parts.push(context)
+    }
+
+    if (hints?.type) {
+      parts.push(`Type hint: ${hints.type}`)
+    }
+    if (hints?.scope) {
+      parts.push(`Scope hint: ${hints.scope}`)
+    }
+    if (hints?.platform && hints.platform.length > 0) {
+      parts.push(`Platform hints: ${hints.platform.join(', ')}`)
+    }
+    if (hints?.riskLevel) {
+      parts.push(`Risk level: ${hints.riskLevel}`)
+    }
+    if (hints?.template) {
+      parts.push(`Template: ${hints.template}`)
+    }
+    if (hints?.groupings && hints.groupings.length > 0) {
+      parts.push(`Grouping areas: ${hints.groupings.join(', ')}`)
+    }
+    if (hints?.testTouched) {
+      parts.push('Tests touched: yes')
+    }
+    if (hints?.uiTouched) {
+      parts.push('UI touched: yes')
+    }
+    if (hints?.commitSubjects && hints.commitSubjects.length > 0) {
+      parts.push('Commit subjects (most recent first):')
+      hints.commitSubjects.slice(0, 12).forEach((subject) => {
+        parts.push(`- ${subject}`)
+      })
     }
 
     const nameStatus = diff.signals?.nameStatus || []

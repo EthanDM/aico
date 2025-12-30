@@ -1,14 +1,22 @@
-import { Config, ProcessedDiff, CommitMessage, PullRequestMessage } from '../types'
+import {
+  Config,
+  ProcessedDiff,
+  CommitMessage,
+  PullRequestMessage,
+  PullRequestTemplate,
+} from '../types'
 import OpenAIService from './OpenAI.service'
 import { PromptBuilder } from '../prompts/PromptBuilder'
 import { CommitValidator } from '../validation/CommitValidator'
 import { SubjectRepairer } from '../validation/SubjectRepairer'
 import { CommitHeuristics } from '../heuristics/CommitHeuristics'
 import { ScopeInferrer } from '../heuristics/ScopeInferrer'
+import { PullRequestHeuristics } from '../heuristics/PullRequestHeuristics'
 import GitService from './Git.service'
 import LoggerService from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
+import { PullRequestValidator } from '../validation/PullRequestValidator'
 
 /**
  * Service for orchestrating the commit message generation pipeline.
@@ -36,6 +44,8 @@ export class CommitGeneratorService {
   private repairer: SubjectRepairer
   private heuristics: CommitHeuristics
   private scopeInferrer: ScopeInferrer
+  private prHeuristics: PullRequestHeuristics
+  private prValidator: PullRequestValidator
   private config: OpenAIConfig
   private commitConfig: CommitConfig
   private options: GeneratorOptions
@@ -47,6 +57,11 @@ export class CommitGeneratorService {
     this.openai = new OpenAIService(config, options)
     this.heuristics = new CommitHeuristics()
     this.scopeInferrer = new ScopeInferrer(this.commitConfig.scopeRules)
+    this.prHeuristics = new PullRequestHeuristics(
+      this.heuristics,
+      this.scopeInferrer
+    )
+    this.prValidator = new PullRequestValidator()
     this.validator = new CommitValidator(this.commitConfig)
     this.repairer = new SubjectRepairer(
       this.commitConfig,
@@ -317,15 +332,69 @@ export class CommitGeneratorService {
   public async generatePullRequestMessage(
     diff: ProcessedDiff,
     userMessage?: string,
-    baseBranch?: string
+    baseBranch?: string,
+    commitSubjects: string[] = []
   ): Promise<PullRequestMessage> {
+    const branchName = await GitService.getBranchName()
+    const prHints = this.prHeuristics.infer(
+      diff,
+      branchName,
+      commitSubjects,
+      userMessage
+    )
+
     const prompt = await this.promptBuilder.buildPullRequestPrompt(
       userMessage,
       diff,
-      baseBranch
+      baseBranch,
+      {
+        type: prHints.type,
+        scope: prHints.scope,
+        template: prHints.template,
+        platform: prHints.platformHints,
+        riskLevel: prHints.riskLevel,
+        groupings: prHints.groupings,
+        testTouched: prHints.testTouched,
+        uiTouched: prHints.uiTouched,
+        commitSubjects,
+      }
     )
 
-    return this.openai.generatePullRequestMessage(prompt)
+    const attemptOnce = async (
+      template: PullRequestTemplate,
+      previousMessage?: PullRequestMessage,
+      violations?: string[]
+    ): Promise<PullRequestMessage> => {
+      if (previousMessage && violations && violations.length > 0) {
+        const repairPrompt = `${prompt}\n\nPrevious output:\n${previousMessage.title}\n\n${previousMessage.body}\n\nViolations:\n- ${violations.join(
+          '\n- '
+        )}\n\nReturn a corrected title and description that follow the template exactly.`
+        return this.openai.generatePullRequestMessage(repairPrompt)
+      }
+
+      return this.openai.generatePullRequestMessage(prompt)
+    }
+
+    const first = await attemptOnce(prHints.template)
+    const validation = this.prValidator.validate(first, prHints.template)
+    if (validation.valid) {
+      return first
+    }
+
+    LoggerService.debug(
+      `PR message failed validation: ${validation.errors.join('; ')}`
+    )
+
+    const repaired = await attemptOnce(prHints.template, first, validation.errors)
+    const secondValidation = this.prValidator.validate(
+      repaired,
+      prHints.template
+    )
+    if (secondValidation.valid) {
+      return repaired
+    }
+
+    return first
   }
 }
 
