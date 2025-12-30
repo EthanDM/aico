@@ -6,6 +6,7 @@ import GitService from './Git.service'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 import { CommitValidator } from '../validation/CommitValidator'
 import { CommitHeuristics } from '../heuristics/CommitHeuristics'
+import { ScopeInferrer } from '../heuristics/ScopeInferrer'
 
 type OpenAIConfig = Config['openai']
 type CommitConfig = Config['commit']
@@ -96,6 +97,7 @@ export class OpenAIService {
   private options: OpenAIOptions
   private validator: CommitValidator
   private heuristics: CommitHeuristics
+  private scopeInferrer: ScopeInferrer
 
   constructor(config: Config, options: OpenAIOptions) {
     this.config = config.openai
@@ -104,6 +106,7 @@ export class OpenAIService {
     this.options = options
     this.validator = new CommitValidator(this.commitConfig)
     this.heuristics = new CommitHeuristics()
+    this.scopeInferrer = new ScopeInferrer(this.commitConfig.scopeRules)
   }
 
   /**
@@ -312,7 +315,7 @@ export class OpenAIService {
     const topFiles = diff.signals?.topFiles || []
     const patchSnippets = diff.signals?.patchSnippets || []
 
-    const scopeHint = this.inferScopeFromPaths(
+    const scopeHint = this.scopeInferrer.infer(
       topFiles.length > 0
         ? topFiles
         : nameStatus.map((entry) => entry.path)
@@ -397,52 +400,6 @@ export class OpenAIService {
         .toLowerCase()
       return match.replace(scope, kebabScope)
     })
-  }
-
-  private inferScopeFromPaths(paths: string[]): string | undefined {
-    const counts = new Map<string, number>()
-    const scopeRules = this.getScopeRules()
-
-    for (const path of paths) {
-      for (const entry of scopeRules) {
-        if (entry.match.test(path)) {
-          counts.set(entry.scope, (counts.get(entry.scope) || 0) + 1)
-        }
-      }
-    }
-
-    const best = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]
-    return best?.[0]
-  }
-
-  private getScopeRules(): { scope: string; match: RegExp }[] {
-    const fallbackRules = [
-      { scope: 'translations', match: /\/translations\// },
-      { scope: 'tests', match: /\/(__tests__|tests)\// },
-      { scope: 'config', match: /(config|\.config|tsconfig|package)\./ },
-      { scope: 'docs', match: /\/(docs|doc)\// },
-      { scope: 'services', match: /\/services\// },
-    ]
-
-    const rawRules = this.commitConfig.scopeRules || []
-    if (rawRules.length === 0) {
-      return fallbackRules
-    }
-
-    const parsed = rawRules
-      .map((rule) => {
-        try {
-          return { scope: rule.scope, match: new RegExp(rule.match) }
-        } catch {
-          return undefined
-        }
-      })
-      .filter(Boolean) as { scope: string; match: RegExp }[]
-
-    if (parsed.length === 0) {
-      return fallbackRules
-    }
-    return parsed
   }
 
   private normalizeSubject(candidate: string): string {
@@ -785,7 +742,7 @@ export class OpenAIService {
       return truncatedCandidate
     }
 
-    const scopeHint = this.inferScopeFromPaths(
+    const scopeHint = this.scopeInferrer.infer(
       diff.signals?.topFiles?.length
         ? diff.signals.topFiles
         : diff.signals?.nameStatus?.map((entry) => entry.path) || []
