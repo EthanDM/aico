@@ -3,6 +3,12 @@ import { CommitValidator } from './CommitValidator'
 import { CommitHeuristics } from '../heuristics/CommitHeuristics'
 import { ScopeInferrer } from '../heuristics/ScopeInferrer'
 
+/**
+ * Service for repairing and improving generated commit subjects.
+ * Applies fallback templates, fixes violations, and deterministically repairs invalid subjects.
+ * Used as a local-first repair strategy before retrying the model.
+ */
+
 type CommitConfig = Config['commit']
 
 const SUBJECT_PARSE_PATTERN =

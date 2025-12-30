@@ -10,6 +10,12 @@ import LoggerService from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
 
+/**
+ * Service for orchestrating the commit message generation pipeline.
+ * Handles AI generation, validation, repair, and fallback strategies.
+ * Coordinates between OpenAI, validation, and heuristic services.
+ */
+
 type OpenAIConfig = Config['openai']
 type CommitConfig = Config['commit']
 

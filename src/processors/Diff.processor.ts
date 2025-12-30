@@ -6,6 +6,12 @@ import {
 } from '../types'
 import { NOISY_FILE_PATTERNS } from '../constants/patterns'
 
+/**
+ * Processor for analyzing and filtering git diffs.
+ * Extracts structured signals (name-status, numstat, snippets) for commit generation.
+ * Handles diff filtering, chunking, and context optimization.
+ */
+
 interface PatchSnippetOptions {
   topFiles?: string[]
   maxHunksPerFile?: number

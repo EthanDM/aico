@@ -22,28 +22,42 @@ AICO (AI Commits) analyzes your git changes and generates conventional commit me
 
 ## 🏗️ Architecture
 
-The project follows a service-oriented architecture with clear separation of concerns:
+The project follows a layered architecture with clear separation of concerns:
 
-```
-src/
-├── cli.ts                    # CLI entry point
-├── services/                 # Core business logic
-│   ├── Config.service.ts     # Configuration management
-│   ├── OpenAI.service.ts     # OpenAI API integration
-│   ├── Git.service.ts        # Git operations
-│   ├── UI.service.ts         # User interface interactions
-│   ├── Workflow.service.ts   # Main application workflow
-│   ├── Program.service.ts    # CLI program setup
-│   ├── AppLog.service.ts     # Application logging
-│   └── Logger.service.ts     # Generic logging utility
-├── processors/
-│   └── Diff.processor.ts     # Git diff analysis and processing
-├── constants/
-│   ├── openai.constants.ts   # OpenAI system prompts
-│   └── patterns.ts           # Regex patterns for parsing
-└── types/
-    └── index.ts              # TypeScript type definitions
-```
+### Core Services
+
+- `Config.service.ts` - Configuration management and API key storage
+- `Git.service.ts` - Git operations and diff collection
+- `OpenAI.service.ts` - OpenAI API client and model interaction
+- `UI.service.ts` - User prompts and interactive workflows
+- `Logger.service.ts` - Structured logging infrastructure
+
+### Orchestration Layer
+
+- `Workflow.service.ts` - High-level application flow coordination
+- `CommitGenerator.service.ts` - Commit generation pipeline
+- `DiffOrchestrator.service.ts` - Diff processing and optimization
+
+### Analysis Layer
+
+- `CommitHeuristics.ts` - Commit type and scope classification
+- `ScopeInferrer.ts` - Intelligent scope inference from file paths
+- `Diff.processor.ts` - Diff filtering, chunking, and signal extraction
+
+### Validation Layer
+
+- `CommitValidator.ts` - Conventional Commits format validation
+- `SubjectRepairer.ts` - Subject repair and fallback templates
+
+### Prompt & Context
+
+- `PromptBuilder.ts` - Prompt construction and context formatting
+- `openai.constants.ts` - System prompts and patterns
+- `patterns.ts` - Regex patterns for parsing
+
+### Entry Point
+
+- `cli.ts` - CLI argument parsing and program initialization
 
 ## 🚀 Quick Start
 
