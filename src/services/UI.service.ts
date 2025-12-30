@@ -6,6 +6,27 @@ import GitService from './Git.service'
  * Service for handling user interactions and UI actions.
  */
 class UIService {
+  private async copyToClipboard(text: string): Promise<void> {
+    const { spawn } = await import('child_process')
+    const platform = process.platform
+    const command =
+      platform === 'darwin' ? 'pbcopy' : platform === 'win32' ? 'clip' : 'xclip'
+    const args = platform === 'linux' ? ['-selection', 'clipboard'] : []
+
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(command, args)
+      child.on('error', reject)
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(new Error(`Clipboard command failed: ${code}`))
+        }
+      })
+      child.stdin.write(text)
+      child.stdin.end()
+    })
+  }
   /**
    * Lets user select which notes to keep in the commit message body.
    *
@@ -446,28 +467,100 @@ class UIService {
       }
 
       case 'copy': {
-        // Use pbcopy on macOS, clip on Windows, or xclip/xsel on Linux
-        const { exec } = await import('child_process')
-        const platform = process.platform
-        const command =
-          platform === 'darwin'
-            ? `echo "${branchName}" | pbcopy`
-            : platform === 'win32'
-              ? `echo ${branchName} | clip`
-              : `echo "${branchName}" | xclip -selection clipboard`
-
-        exec(command, (error) => {
-          if (error) {
-            LoggerService.error('Failed to copy to clipboard')
-          } else {
-            LoggerService.info('✅ Branch name copied to clipboard!')
-          }
-        })
+        try {
+          await this.copyToClipboard(branchName)
+          LoggerService.info('✅ Branch name copied to clipboard!')
+        } catch (error) {
+          LoggerService.error('Failed to copy to clipboard')
+        }
         return { result: undefined }
       }
 
       case 'regenerate': {
         const newContext = await this.promptForRegenerationContext()
+        return {
+          result: 'restart',
+          newContext: newContext,
+        }
+      }
+
+      case 'cancel':
+        LoggerService.info('👋 Operation cancelled')
+        return { result: 'exit' }
+
+      default:
+        LoggerService.error(`Unknown action: ${action}`)
+        return { result: 'exit' }
+    }
+  }
+
+  /**
+   * Prompts the user for action on the generated pull request message.
+   */
+  public async promptForPullRequestAction(): Promise<string> {
+    const { default: inquirer } = await import('inquirer')
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'What would you like to do with this PR message?',
+        choices: [
+          { name: 'Copy title', value: 'copy-title' },
+          { name: 'Copy description', value: 'copy-body' },
+          { name: 'Copy title + description', value: 'copy-all' },
+          { name: 'Regenerate with new context', value: 'regenerate' },
+          { name: 'Cancel', value: 'cancel' },
+        ],
+      },
+    ])
+
+    return action
+  }
+
+  /**
+   * Handles the user's action choice for pull request message.
+   */
+  public async handlePullRequestAction(
+    action: string,
+    message: { title: string; body: string },
+    currentContext?: string
+  ): Promise<{ result: 'exit' | 'restart' | void; newContext?: string }> {
+    switch (action) {
+      case 'copy-title': {
+        try {
+          await this.copyToClipboard(message.title)
+          LoggerService.info('✅ PR title copied to clipboard!')
+        } catch (error) {
+          LoggerService.error('Failed to copy to clipboard')
+        }
+        return { result: undefined }
+      }
+
+      case 'copy-body': {
+        try {
+          await this.copyToClipboard(message.body)
+          LoggerService.info('✅ PR description copied to clipboard!')
+        } catch (error) {
+          LoggerService.error('Failed to copy to clipboard')
+        }
+        return { result: undefined }
+      }
+
+      case 'copy-all': {
+        const combined = [message.title, '', message.body].join('\n')
+        try {
+          await this.copyToClipboard(combined)
+          LoggerService.info('✅ PR title + description copied to clipboard!')
+        } catch (error) {
+          LoggerService.error('Failed to copy to clipboard')
+        }
+        return { result: undefined }
+      }
+
+      case 'regenerate': {
+        const newContext = await this.promptForRegenerationContext(
+          currentContext
+        )
         return {
           result: 'restart',
           newContext: newContext,

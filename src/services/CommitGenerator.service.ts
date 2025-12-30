@@ -1,4 +1,4 @@
-import { Config, ProcessedDiff, CommitMessage } from '../types'
+import { Config, ProcessedDiff, CommitMessage, PullRequestMessage } from '../types'
 import OpenAIService from './OpenAI.service'
 import { PromptBuilder } from '../prompts/PromptBuilder'
 import { CommitValidator } from '../validation/CommitValidator'
@@ -309,6 +309,23 @@ export class CommitGeneratorService {
     diff?: ProcessedDiff
   ): Promise<string> {
     return this.openai.generateBranchName(context, diff)
+  }
+
+  /**
+   * Generates a pull request title and description for the given diff.
+   */
+  public async generatePullRequestMessage(
+    diff: ProcessedDiff,
+    userMessage?: string,
+    baseBranch?: string
+  ): Promise<PullRequestMessage> {
+    const prompt = await this.promptBuilder.buildPullRequestPrompt(
+      userMessage,
+      diff,
+      baseBranch
+    )
+
+    return this.openai.generatePullRequestMessage(prompt)
   }
 }
 

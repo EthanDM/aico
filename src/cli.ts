@@ -13,7 +13,9 @@ const main = async (): Promise<void> => {
     const { config, options } = await programService.initialize()
     const workflow = createWorkflow(config, options)
 
-    if (options.branch) {
+    if (options.pullRequest) {
+      await workflow.generatePullRequestMessage()
+    } else if (options.branch) {
       // Generate branch name
       await workflow.generateBranchName()
     } else {

@@ -1,11 +1,12 @@
 import OpenAI from 'openai'
-import { Config, CommitMessage, ProcessedDiff } from '../types'
+import { Config, CommitMessage, ProcessedDiff, PullRequestMessage } from '../types'
 import LoggerService from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { PromptBuilder } from '../prompts/PromptBuilder'
 import GitService from './Git.service'
 import { CommitHeuristics } from '../heuristics/CommitHeuristics'
 import { ScopeInferrer } from '../heuristics/ScopeInferrer'
+import { PULL_REQUEST_SYSTEM_CONTENT } from '../constants/openai.constants'
 
 type OpenAIConfig = Config['openai']
 
@@ -90,6 +91,33 @@ export class OpenAIService {
     return {
       title,
       body: bodyLines.length > 0 ? bodyLines.join('\n') : undefined,
+    }
+  }
+
+  /**
+   * Parses a pull request message from the OpenAI response.
+   */
+  public parsePullRequestMessage(content: string): PullRequestMessage {
+    let cleanContent = content
+      .replace(/```[a-z]*\n?/gi, '')
+      .replace(/```/g, '')
+      .trim()
+
+    const lines = cleanContent.split('\n')
+    const titleIndex = lines.findIndex((line) => line.trim().length > 0)
+    const rawTitle =
+      titleIndex >= 0 ? lines[titleIndex].trim() : cleanContent.trim()
+    const title = rawTitle.replace(/^title:\s*/i, '').trim()
+
+    const bodyLines = titleIndex >= 0 ? lines.slice(titleIndex + 1) : []
+    if (bodyLines.length > 0 && bodyLines[0].trim() === '') {
+      bodyLines.shift()
+    }
+    const body = bodyLines.join('\n').trim()
+
+    return {
+      title,
+      body: body || '',
     }
   }
 
@@ -248,6 +276,38 @@ Examples of bad branch names:
       return normalizedBranch
     } catch (error) {
       LoggerService.error('Failed to generate branch name')
+      throw error
+    }
+  }
+
+  /**
+   * Generates a pull request title and description from a prompt.
+   */
+  public async generatePullRequestMessage(
+    prompt: string
+  ): Promise<PullRequestMessage> {
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: PULL_REQUEST_SYSTEM_CONTENT,
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ]
+
+    try {
+      const response = await this.complete(
+        messages,
+        this.config.model,
+        650,
+        this.config.model.startsWith('gpt-5') ? undefined : 0.3
+      )
+
+      return this.parsePullRequestMessage(response)
+    } catch (error) {
+      LoggerService.error('Failed to generate pull request message')
       throw error
     }
   }

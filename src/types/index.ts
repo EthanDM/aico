@@ -105,6 +105,11 @@ export interface CommitMessage {
   body?: string
 }
 
+export interface PullRequestMessage {
+  title: string
+  body: string
+}
+
 /**
  * Type for the LogLevel enum.
  */

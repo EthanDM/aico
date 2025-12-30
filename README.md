@@ -16,6 +16,7 @@ AICO (AI Commits) analyzes your git changes and generates conventional commit me
 - 🔄 **Interactive Workflow**: Preview, edit, regenerate, or accept generated messages
 - 🌳 **Smart Context**: Uses branch hints and structured diff signals for consistent subjects
 - 🌿 **Branch Name Generation**: Creates semantic branch names from descriptions
+- 🧾 **PR Title + Description**: Generates PR copy from branch diffs
 - ⚡ **Performance Optimized**: Uses GPT-4o-mini by default for speed and cost efficiency
 - 🛡️ **Secure Configuration**: Safe API key storage in user config directory
 - 🎨 **Rich CLI Experience**: Colorful interface with figlet banners and progress indicators
@@ -111,6 +112,9 @@ aico "optimize database queries for better performance"
 
 # Generate branch name with context
 aico -b -c "add user profile feature"
+
+# Generate PR title + description (uses branch diff)
+aico -p -c "add cache invalidation for profile pages"
 ```
 
 ### Context Usage Patterns
@@ -169,8 +173,9 @@ Options:
   --no-auto-stage          Disable automatic staging of changes
   --merge                  Generate merge commit message
   --set-default-model      Set default model (gpt-4o | gpt-4o-mini)
-  --set-api-key           Save OpenAI API key to config
-  -b, --branch            Generate branch name instead of commit message
+  --set-api-key            Save OpenAI API key to config
+  -b, --branch             Generate branch name instead of commit message
+  -p, --pull-request       Generate PR title and description from branch diff
   -h, --help              Display help information
   -v, --version           Show version number
 

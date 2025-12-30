@@ -28,6 +28,10 @@ export interface ProgramOptions {
    * Whether to generate a branch name instead of a commit message
    */
   branch?: boolean
+  /**
+   * Whether to generate a pull request title and description
+   */
+  pullRequest?: boolean
 }
 
 /**
@@ -99,6 +103,10 @@ class ProgramService {
         '-b, --branch',
         chalk.yellow('generate a branch name instead of a commit message')
       )
+      .option(
+        '-p, --pull-request',
+        chalk.yellow('generate a pull request title and description')
+      )
       .allowUnknownOption()
       .parse(process.argv)
 
@@ -153,11 +161,18 @@ class ProgramService {
       AppLogService.debugModeEnabled(options, config)
 
       // Pass options to services that need them
+      if (options.branch && options.pullRequest) {
+        throw new Error(
+          'Options --branch and --pull-request cannot be used together'
+        )
+      }
+
       const serviceOptions = {
         context: options.context || false,
         noAutoStage: options.autoStage === false,
         merge: options.merge || false,
         branch: options.branch || false,
+        pullRequest: options.pullRequest || false,
       }
 
       return { config, options: serviceOptions }
