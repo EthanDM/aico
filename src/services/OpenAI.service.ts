@@ -4,12 +4,10 @@ import LoggerService from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import GitService from './Git.service'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
+import { CommitValidator } from '../validation/CommitValidator'
 
 type OpenAIConfig = Config['openai']
 type CommitConfig = Config['commit']
-
-const SUBJECT_PATTERN =
-  /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: .+$/
 
 const SUBJECT_PARSE_PATTERN =
   /^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9-]+\))?: (.+)$/
@@ -103,12 +101,14 @@ export class OpenAIService {
   private config: OpenAIConfig
   private commitConfig: CommitConfig
   private options: OpenAIOptions
+  private validator: CommitValidator
 
   constructor(config: Config, options: OpenAIOptions) {
     this.config = config.openai
     this.commitConfig = config.commit
     this.client = new OpenAI({ apiKey: this.config.apiKey })
     this.options = options
+    this.validator = new CommitValidator(this.commitConfig)
   }
 
   /**
@@ -248,107 +248,6 @@ export class OpenAIService {
       return 'readme'
     }
     return 'docs'
-  }
-
-  private containsFilePathOrExtension(text: string): boolean {
-    const hasPath =
-      /[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/.test(text) ||
-      /[A-Za-z0-9._-]+\\[A-Za-z0-9._\\-]+/.test(text)
-    const hasExtension = /\b[\w-]+\.[a-z][a-z0-9]{1,4}\b/i.test(text)
-    return hasPath || hasExtension
-  }
-
-  private validateCommitMessage(
-    message: CommitMessage,
-    options: {
-      maxTitleLength: number
-      includeBodyMode: CommitConfig['includeBody']
-      includeBodyAllowed: boolean
-      internalChange?: boolean
-      docsOnly?: boolean
-    }
-  ): { valid: boolean; errors: string[] } {
-    const errors: string[] = []
-    const title = message.title.trim()
-
-    if (!SUBJECT_PATTERN.test(title)) {
-      errors.push('Subject must follow Conventional Commits format')
-    }
-
-    if (title.length > options.maxTitleLength) {
-      errors.push(
-        `Subject exceeds ${options.maxTitleLength} characters`
-      )
-    }
-
-    if (this.containsFilePathOrExtension(title)) {
-      errors.push('Subject must not include file paths or extensions')
-    }
-
-    const bannedSubjectPattern = new RegExp(
-      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
-      'i'
-    )
-    if (bannedSubjectPattern.test(title)) {
-      errors.push('Subject contains banned filler words')
-    }
-    if (VAGUE_SUBJECT_PATTERNS.some((pattern) => pattern.test(title))) {
-      errors.push('Subject is too vague')
-    }
-
-    if (options.internalChange && /^feat(\(|:)/.test(title)) {
-      errors.push('Use refactor/chore for internal tooling changes (not feat)')
-    }
-
-    if (options.docsOnly && !/^docs(\(|:)/.test(title)) {
-      errors.push('Use docs for documentation-only changes')
-    }
-
-    if (message.body) {
-      if (
-        options.includeBodyMode === 'never' ||
-        !options.includeBodyAllowed
-      ) {
-        errors.push('Body is not allowed for this commit')
-      }
-
-      const bodyLines = message.body
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-
-      if (bodyLines.length > 2) {
-        errors.push('Body must be 2 bullets or fewer')
-      }
-
-      if (bodyLines.some((line) => !line.startsWith('- '))) {
-        errors.push('Body bullets must start with "- "')
-      }
-
-      const narrationWords = [
-        'update',
-        'updated',
-        'modify',
-        'modified',
-        'change',
-        'changed',
-        'refactor',
-        'refactored',
-        'adjust',
-        'adjusted',
-        'cleanup',
-        'cleaned',
-      ]
-      const narrationPattern = new RegExp(
-        `\\b(${narrationWords.join('|')})\\b`,
-        'i'
-      )
-      if (bodyLines.some((line) => narrationPattern.test(line))) {
-        errors.push('Body notes must avoid narration words')
-      }
-    }
-
-    return { valid: errors.length === 0, errors }
   }
 
   /**
@@ -630,43 +529,6 @@ export class OpenAIService {
     return candidate.split('\n')[0]?.replace(/\s+/g, ' ').trim() || ''
   }
 
-  private isValidSubject(subject: string, maxLength: number): boolean {
-    if (!subject || subject.length > maxLength) return false
-    if (!SUBJECT_PATTERN.test(subject)) return false
-    if (this.containsFilePathOrExtension(subject)) return false
-    const bannedSubjectPattern = new RegExp(
-      `\\b(${BANNED_SUBJECT_WORDS.join('|')})\\b`,
-      'i'
-    )
-    if (bannedSubjectPattern.test(subject)) return false
-    if (VAGUE_SUBJECT_PATTERNS.some((pattern) => pattern.test(subject))) {
-      return false
-    }
-    return true
-  }
-
-  private splitValidationErrors(errors: string[]): {
-    structural: string[]
-    style: string[]
-  } {
-    const structural: string[] = []
-    const style: string[] = []
-
-    errors.forEach((error) => {
-      if (
-        error.includes('Conventional Commits format') ||
-        error.includes('Use refactor/chore') ||
-        error.includes('Use docs for documentation-only changes')
-      ) {
-        structural.push(error)
-      } else {
-        style.push(error)
-      }
-    })
-
-    return { structural, style }
-  }
-
   private stripFilePaths(text: string): string {
     let cleaned = text
     cleaned = cleaned.replace(/[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+/g, '')
@@ -940,7 +802,7 @@ export class OpenAIService {
       maxLength
     )
 
-    if (!this.isValidSubject(subject, maxLength)) {
+    if (!this.validator.isValidSubject(subject, maxLength)) {
       return undefined
     }
 
@@ -964,7 +826,7 @@ export class OpenAIService {
       this.commitConfig.maxTitleLength
     )
 
-    if (!this.isValidSubject(subject, this.commitConfig.maxTitleLength)) {
+    if (!this.validator.isValidSubject(subject, this.commitConfig.maxTitleLength)) {
       return undefined
     }
 
@@ -1025,7 +887,7 @@ export class OpenAIService {
       ? this.normalizeSubject(candidate)
       : ''
 
-    if (this.isValidSubject(candidateSubject, maxLength)) {
+    if (this.validator.isValidSubject(candidateSubject, maxLength)) {
       return candidateSubject
     }
 
@@ -1033,7 +895,7 @@ export class OpenAIService {
       candidateSubject,
       maxLength
     )
-    if (this.isValidSubject(truncatedCandidate, maxLength)) {
+    if (this.validator.isValidSubject(truncatedCandidate, maxLength)) {
       return truncatedCandidate
     }
 
@@ -1050,13 +912,13 @@ export class OpenAIService {
       : `${preferredType}: ${baseDescription}`
 
     const scopedTruncated = this.truncateSubjectToMax(scoped, maxLength)
-    if (this.isValidSubject(scopedTruncated, maxLength)) {
+    if (this.validator.isValidSubject(scopedTruncated, maxLength)) {
       return scopedTruncated
     }
 
     const fallback = `chore: ${baseDescription}`
     const fallbackTruncated = this.truncateSubjectToMax(fallback, maxLength)
-    if (this.isValidSubject(fallbackTruncated, maxLength)) {
+    if (this.validator.isValidSubject(fallbackTruncated, maxLength)) {
       return fallbackTruncated
     }
 
@@ -1291,12 +1153,12 @@ export class OpenAIService {
       const templateSubject = this.buildBehaviorTemplateSubject(diff)
       if (
         templateSubject &&
-        this.isValidSubject(templateSubject, this.commitConfig.maxTitleLength)
+        this.validator.isValidSubject(templateSubject, this.commitConfig.maxTitleLength)
       ) {
         return { message: { title: templateSubject, body: undefined } }
       }
 
-      const validation = this.validateCommitMessage(parsedMessage, {
+      const validation = this.validator.validate(parsedMessage, {
         maxTitleLength: this.commitConfig.maxTitleLength,
         includeBodyMode: this.commitConfig.includeBody,
         includeBodyAllowed,
@@ -1312,7 +1174,7 @@ export class OpenAIService {
         title: parsedMessage.title,
         body: undefined,
       }
-      const subjectOnlyValidation = this.validateCommitMessage(subjectOnly, {
+      const subjectOnlyValidation = this.validator.validate(subjectOnly, {
         maxTitleLength: this.commitConfig.maxTitleLength,
         includeBodyMode: this.commitConfig.includeBody,
         includeBodyAllowed,
@@ -1348,7 +1210,7 @@ export class OpenAIService {
     }
 
     lastErrors = firstAttempt.errors || []
-    const { structural } = this.splitValidationErrors(lastErrors)
+    const { structural } = this.validator.splitValidationErrors(lastErrors)
     const structuralFailure =
       structural.length > 0 ||
       lastErrors.some(
