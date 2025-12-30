@@ -230,36 +230,6 @@ class GitService {
     return this.git.raw(['diff', '--cached', '--', ...paths])
   }
 
-  private getTopFiles(
-    numStat: NumStatEntry[],
-    nameStatus: NameStatusEntry[]
-  ): string[] {
-    const candidates = numStat
-      .slice()
-      .sort(
-        (a, b) => b.insertions + b.deletions - (a.insertions + a.deletions)
-      )
-      .map((entry) => entry.path)
-
-    const unique = new Set<string>()
-    for (const path of candidates) {
-      if (DiffProcessor.isNoisyFile(path)) continue
-      if (DiffProcessor.isBinaryOrMediaFile(path)) continue
-      unique.add(path)
-      if (unique.size >= 5) break
-    }
-
-    if (unique.size === 0) {
-      for (const entry of nameStatus) {
-        if (DiffProcessor.isNoisyFile(entry.path)) continue
-        if (DiffProcessor.isBinaryOrMediaFile(entry.path)) continue
-        unique.add(entry.path)
-        if (unique.size >= 3) break
-      }
-    }
-
-    return Array.from(unique)
-  }
 
   /**
    * Gets the diff of all changes in the git repository.
@@ -293,42 +263,6 @@ class GitService {
     return [message.title, '', message.body].join('\n')
   }
 
-  /**
-   * Gets the staged changes with processed diff information.
-   *
-   * @param isMerge - Whether this is a merge commit
-   * @param modelType - The AI model being used (affects processing strategy)
-   * @returns The processed diff of staged changes.
-   */
-  public async getStagedChanges(
-    isMerge: boolean = false,
-    modelType: string = 'gpt-4o'
-  ): Promise<ProcessedDiff> {
-    const rawPatch = await this.getStagedDiff()
-    const nameStatus = await this.getStagedNameStatusRaw()
-    const numStat = await this.getStagedNumStatRaw()
-
-    const topFiles = this.getTopFiles(numStat, nameStatus)
-    const patchForTopFiles =
-      topFiles.length > 0 ? await this.getStagedPatchForPaths(topFiles) : rawPatch
-    const patchSnippets = DiffProcessor.extractPatchSnippets(patchForTopFiles, {
-      topFiles,
-      maxHunksPerFile: 2,
-      maxLinesPerHunk: 30,
-      maxCharsTotal: 12000,
-    })
-
-    return DiffProcessor.processDiffWithSignals(
-      rawPatch,
-      {
-        nameStatus,
-        numStat,
-        topFiles,
-        patchSnippets,
-      },
-      isMerge
-    )
-  }
 
   /**
    * Gets all changes with processed diff information.

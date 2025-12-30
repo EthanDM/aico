@@ -72,7 +72,6 @@ export interface GitDiff {
   deletions: string[]
   rawDiff: string
   filteredRawDiff: string
-  changePatterns?: string[]
 }
 
 /**
@@ -88,7 +87,6 @@ export interface ProcessedDiff {
     additions: number
     deletions: number
     wasSummarized: boolean
-    qualityIndicator?: string
   }
   signals?: {
     nameStatus: NameStatusEntry[]
@@ -111,13 +109,3 @@ export interface CommitMessage {
  * Type for the LogLevel enum.
  */
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
-
-/**
- * Interface for the OpenAIService type.
- */
-export interface OpenAIService {
-  generateCommitMessage: (
-    diff: ProcessedDiff,
-    userMessage?: string
-  ) => Promise<CommitMessage>
-}

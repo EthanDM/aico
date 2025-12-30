@@ -364,20 +364,20 @@ class UIService {
     const hasBody = Boolean(message.body && message.body.trim())
     const choices = hasBody
       ? [
-          { name: 'Accept and commit', value: 'accept' },
-          { name: 'Edit message', value: 'edit' },
-          { name: 'Regenerate message', value: 'regenerate' },
-          { name: 'View full diff', value: 'diff' },
-          { name: 'Cancel', value: 'cancel' },
-        ]
+        { name: 'Accept and commit', value: 'accept' },
+        { name: 'Edit message', value: 'edit' },
+        { name: 'Regenerate message', value: 'regenerate' },
+        { name: 'View full diff', value: 'diff' },
+        { name: 'Cancel', value: 'cancel' },
+      ]
       : [
-          { name: 'Accept and commit', value: 'accept' },
-          { name: 'Edit title', value: 'edit-title' },
-          { name: 'Add notes (optional)', value: 'add-notes' },
-          { name: 'Regenerate message', value: 'regenerate' },
-          { name: 'View full diff', value: 'diff' },
-          { name: 'Cancel', value: 'cancel' },
-        ]
+        { name: 'Accept and commit', value: 'accept' },
+        { name: 'Edit title', value: 'edit-title' },
+        { name: 'Add notes (optional)', value: 'add-notes' },
+        { name: 'Regenerate message', value: 'regenerate' },
+        { name: 'View full diff', value: 'diff' },
+        { name: 'Cancel', value: 'cancel' },
+      ]
     const { action } = await inquirer.prompt([
       {
         type: 'list',
@@ -453,8 +453,8 @@ class UIService {
           platform === 'darwin'
             ? `echo "${branchName}" | pbcopy`
             : platform === 'win32'
-            ? `echo ${branchName} | clip`
-            : `echo "${branchName}" | xclip -selection clipboard`
+              ? `echo ${branchName} | clip`
+              : `echo "${branchName}" | xclip -selection clipboard`
 
         exec(command, (error) => {
           if (error) {
