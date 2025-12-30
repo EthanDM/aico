@@ -47,6 +47,45 @@ class DiffOrchestrator {
   }
 
   /**
+   * Gets the diff of the current branch against a base ref with processed diff signals.
+   *
+   * @param baseRef - Base branch reference to compare against
+   * @param modelType - The AI model being used (affects processing strategy)
+   * @returns The processed diff of branch changes.
+   */
+  public async getBranchChanges(
+    baseRef: string,
+    modelType: string = 'gpt-4o'
+  ): Promise<ProcessedDiff> {
+    const rawPatch = await GitService.getBranchDiff(baseRef)
+    const nameStatus = await GitService.getBranchNameStatusRaw(baseRef)
+    const numStat = await GitService.getBranchNumStatRaw(baseRef)
+
+    const topFiles = this.getTopFiles(numStat, nameStatus)
+    const patchForTopFiles =
+      topFiles.length > 0
+        ? await GitService.getBranchPatchForPaths(baseRef, topFiles)
+        : rawPatch
+    const patchSnippets = DiffProcessor.extractPatchSnippets(patchForTopFiles, {
+      topFiles,
+      maxHunksPerFile: 2,
+      maxLinesPerHunk: 30,
+      maxCharsTotal: 12000,
+    })
+
+    return DiffProcessor.processDiffWithSignals(
+      rawPatch,
+      {
+        nameStatus,
+        numStat,
+        topFiles,
+        patchSnippets,
+      },
+      false
+    )
+  }
+
+  /**
    * Selects top files by churn from numstat and nameStatus entries.
    * Prioritizes high-churn files while filtering out noisy and binary files.
    *

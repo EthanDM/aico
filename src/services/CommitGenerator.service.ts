@@ -1,14 +1,22 @@
-import { Config, ProcessedDiff, CommitMessage } from '../types'
+import {
+  Config,
+  ProcessedDiff,
+  CommitMessage,
+  PullRequestMessage,
+  PullRequestTemplate,
+} from '../types'
 import OpenAIService from './OpenAI.service'
 import { PromptBuilder } from '../prompts/PromptBuilder'
 import { CommitValidator } from '../validation/CommitValidator'
 import { SubjectRepairer } from '../validation/SubjectRepairer'
 import { CommitHeuristics } from '../heuristics/CommitHeuristics'
 import { ScopeInferrer } from '../heuristics/ScopeInferrer'
+import { PullRequestHeuristics } from '../heuristics/PullRequestHeuristics'
 import GitService from './Git.service'
 import LoggerService from './Logger.service'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { COMMIT_MESSAGE_SYSTEM_CONTENT } from '../constants/openai.constants'
+import { PullRequestValidator } from '../validation/PullRequestValidator'
 
 /**
  * Service for orchestrating the commit message generation pipeline.
@@ -36,6 +44,8 @@ export class CommitGeneratorService {
   private repairer: SubjectRepairer
   private heuristics: CommitHeuristics
   private scopeInferrer: ScopeInferrer
+  private prHeuristics: PullRequestHeuristics
+  private prValidator: PullRequestValidator
   private config: OpenAIConfig
   private commitConfig: CommitConfig
   private options: GeneratorOptions
@@ -47,6 +57,11 @@ export class CommitGeneratorService {
     this.openai = new OpenAIService(config, options)
     this.heuristics = new CommitHeuristics()
     this.scopeInferrer = new ScopeInferrer(this.commitConfig.scopeRules)
+    this.prHeuristics = new PullRequestHeuristics(
+      this.heuristics,
+      this.scopeInferrer
+    )
+    this.prValidator = new PullRequestValidator()
     this.validator = new CommitValidator(this.commitConfig)
     this.repairer = new SubjectRepairer(
       this.commitConfig,
@@ -309,6 +324,128 @@ export class CommitGeneratorService {
     diff?: ProcessedDiff
   ): Promise<string> {
     return this.openai.generateBranchName(context, diff)
+  }
+
+  /**
+   * Generates a pull request title and description for the given diff.
+   */
+  public async generatePullRequestMessage(
+    diff: ProcessedDiff,
+    userMessage?: string,
+    baseBranch?: string,
+    commitSubjects: string[] = []
+  ): Promise<PullRequestMessage> {
+    const branchName = await GitService.getBranchName()
+    const prHints = this.prHeuristics.infer(
+      diff,
+      branchName,
+      commitSubjects,
+      userMessage
+    )
+
+    const buildPrompt = async (templateOverride?: PullRequestTemplate) => {
+      return this.promptBuilder.buildPullRequestPrompt(
+        userMessage,
+        diff,
+        baseBranch,
+        {
+          type: prHints.type,
+          scope: prHints.scope,
+          template: templateOverride || prHints.template,
+          platform: prHints.platformHints,
+          riskLevel: prHints.riskLevel,
+          groupings: prHints.groupings,
+          testTouched: prHints.testTouched,
+          uiTouched: prHints.uiTouched,
+          commitSubjects,
+          behaviorSummary: prHints.behaviorSummary,
+        }
+      )
+    }
+
+    const prompt = await buildPrompt()
+
+    const attemptOnce = async (
+      template: PullRequestTemplate,
+      promptOverride?: string,
+      previousMessage?: PullRequestMessage,
+      violations?: string[],
+      repairHint?: string
+    ): Promise<PullRequestMessage> => {
+      const basePrompt = promptOverride || prompt
+      if (previousMessage && violations && violations.length > 0) {
+        const extraHint = repairHint ? `\nAdditional instruction: ${repairHint}\n` : '\n'
+        const repairPrompt = `${basePrompt}\n\nPrevious output:\n${previousMessage.title}\n\n${previousMessage.body}\n\nViolations:\n- ${violations.join(
+          '\n- '
+        )}\n${extraHint}\nReturn a corrected title and description that follow the template exactly.`
+        return this.openai.generatePullRequestMessage(repairPrompt)
+      }
+
+      return this.openai.generatePullRequestMessage(basePrompt)
+    }
+
+    const first = await attemptOnce(prHints.template)
+    const validation = this.prValidator.validate(first, prHints.template)
+    if (validation.valid) {
+      return first
+    }
+
+    LoggerService.debug(
+      `PR message failed validation: ${validation.errors.join('; ')}`
+    )
+
+    const wantsDefaultTemplate = validation.errors.some((error) =>
+      error.includes('Group heading') || error.includes('Grouped template')
+    )
+    if (wantsDefaultTemplate && prHints.template === 'grouped') {
+      const defaultPrompt = await buildPrompt('default')
+      const fallback = await attemptOnce('default', defaultPrompt)
+      const fallbackValidation = this.prValidator.validate(fallback, 'default')
+      if (fallbackValidation.valid) {
+        return fallback
+      }
+    }
+
+    const qaOnlyErrors = validation.errors.every((error) =>
+      error.toLowerCase().includes('qa focus')
+    )
+    const qaRepairHint = qaOnlyErrors
+      ? 'QA Focus bullets must be executable checks like "CLI: run aico -p ... -> expect Summary/Changes/QA Focus". Avoid verified/ensured/checked/tested/confirmed.'
+      : undefined
+
+    const repaired = await attemptOnce(
+      prHints.template,
+      undefined,
+      first,
+      validation.errors,
+      qaRepairHint
+    )
+    const secondValidation = this.prValidator.validate(
+      repaired,
+      prHints.template
+    )
+    if (secondValidation.valid) {
+      return repaired
+    }
+
+    const strictRepairHint =
+      'Rewrite Changes to focus on user-visible behavior. Avoid internal mechanics words like heuristics, validator, template, pipeline, services, prompt. QA Focus must be executable checks with surfaces and expected outcomes, and must not include "Not tested" alongside other bullets.'
+    const strictRepair = await attemptOnce(
+      prHints.template,
+      undefined,
+      repaired,
+      secondValidation.errors,
+      strictRepairHint
+    )
+    const thirdValidation = this.prValidator.validate(
+      strictRepair,
+      prHints.template
+    )
+    if (thirdValidation.valid) {
+      return strictRepair
+    }
+
+    return strictRepair
   }
 }
 

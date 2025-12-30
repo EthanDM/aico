@@ -12,6 +12,7 @@ interface WorkflowOptions {
   noAutoStage?: boolean
   merge?: boolean
   branch?: boolean
+  pullRequest?: boolean
 }
 
 /**
@@ -30,6 +31,7 @@ class WorkflowService {
       noAutoStage: options.noAutoStage || false,
       merge: options.merge || false,
       branch: options.branch || false,
+      pullRequest: options.pullRequest || false,
     }
 
     // Extract context string if provided
@@ -244,6 +246,67 @@ class WorkflowService {
       }
 
       return branchName
+    }
+  }
+
+  /**
+   * Generates a pull request title and description based on the branch diff.
+   */
+  public async generatePullRequestMessage(
+    currentContext?: string
+  ): Promise<void> {
+    let context = currentContext || this.providedContext
+
+    while (true) {
+      if (!context) {
+        context = await this.promptForContext()
+      }
+
+      const baseBranch = await GitService.getDefaultBaseBranch()
+      const diff = await DiffOrchestrator.getBranchChanges(
+        baseBranch,
+        this.config.openai.model
+      )
+      const commitSubjects = await GitService.getCommitSubjectsBetween(
+        baseBranch
+      )
+
+      if (diff.stats.filesChanged === 0) {
+        throw new Error('No changes detected between branch and base')
+      }
+
+      AppLogService.gitStats(diff)
+
+      LoggerService.info('\n🧾 Generating pull request title + description...')
+      const prMessage = await this.commitGenerator.generatePullRequestMessage(
+        diff,
+        context,
+        baseBranch,
+        commitSubjects
+      )
+
+      console.log('\n🎯 Generated pull request title:')
+      console.log(chalk.green(prMessage.title))
+      console.log('\n📝 Generated pull request description:\n')
+      console.log(prMessage.body)
+
+      const action = await uiService.promptForPullRequestAction()
+      const { result, newContext } = await uiService.handlePullRequestAction(
+        action,
+        prMessage,
+        context
+      )
+
+      if (result === 'restart') {
+        context = newContext
+        continue
+      }
+
+      if (result === 'exit') {
+        return
+      }
+
+      return
     }
   }
 

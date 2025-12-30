@@ -253,6 +253,137 @@ export class PromptBuilder {
   }
 
   /**
+   * Builds a prompt for pull request title and description generation.
+   *
+   * @param context - Optional user-provided context
+   * @param diff - Processed branch diff
+   * @param baseBranch - Optional base branch name
+   * @returns The prompt string
+   */
+  async buildPullRequestPrompt(
+    context: string | undefined,
+    diff: ProcessedDiff,
+    baseBranch?: string,
+    hints?: {
+      type?: string
+      scope?: string
+      template?: string
+      platform?: string[]
+      riskLevel?: string
+      groupings?: string[]
+      testTouched?: boolean
+      uiTouched?: boolean
+      commitSubjects?: string[]
+      behaviorSummary?: string
+    }
+  ): Promise<string> {
+    const parts: string[] = [
+      'Generate a pull request title and description for the branch changes below.',
+      'Title format: <type>(<scope>): <outcome>.',
+      'Use the shortest template that preserves clarity.',
+      'Use Markdown headings with "###" and bullet lists.',
+      'Group headings must be product/feature areas, not files or code layers.',
+      'QA Focus bullets must start with a surface like "CLI: ..." or "UI: ..." and be executable checks.',
+    ]
+
+    const branchName = await this.git.getBranchName()
+    if (branchName) {
+      parts.push(`Branch: ${branchName}`)
+    }
+    if (baseBranch) {
+      parts.push(`Base: ${baseBranch}`)
+    }
+
+    if (context) {
+      parts.push('User context:')
+      parts.push(context)
+    }
+
+    if (hints?.type) {
+      parts.push(`Type hint: ${hints.type}`)
+    }
+    if (hints?.scope) {
+      parts.push(`Scope hint: ${hints.scope}`)
+    }
+    if (hints?.platform && hints.platform.length > 0) {
+      parts.push(`Platform hints: ${hints.platform.join(', ')}`)
+    }
+    if (hints?.riskLevel) {
+      parts.push(`Risk level: ${hints.riskLevel}`)
+    }
+    if (hints?.template) {
+      parts.push(`Template: ${hints.template} (do not change)`)
+    }
+    if (hints?.behaviorSummary) {
+      parts.push(`Behavior summary: ${hints.behaviorSummary}`)
+    }
+    if (hints?.groupings && hints.groupings.length > 0) {
+      parts.push(`Grouping areas: ${hints.groupings.join(', ')}`)
+    }
+    if (hints?.testTouched) {
+      parts.push('Tests touched: yes')
+    }
+    if (hints?.uiTouched) {
+      parts.push('UI touched: yes')
+    }
+    if (hints?.commitSubjects && hints.commitSubjects.length > 0) {
+      parts.push('Commit subjects (most recent first):')
+      hints.commitSubjects.slice(0, 12).forEach((subject) => {
+        parts.push(`- ${subject}`)
+      })
+    }
+
+    const nameStatus = diff.signals?.nameStatus || []
+    const numStat = diff.signals?.numStat || []
+    const topFiles = diff.signals?.topFiles || []
+    const patchSnippets = diff.signals?.patchSnippets || []
+
+    parts.push('Stats:')
+    parts.push(`- files: ${diff.stats.filesChanged}`)
+    parts.push(`- insertions: ${diff.stats.additions}`)
+    parts.push(`- deletions: ${diff.stats.deletions}`)
+
+    if (topFiles.length > 0) {
+      parts.push('Top changes:')
+      topFiles.forEach((path) => {
+        const stats = numStat.find((entry) => entry.path === path)
+        if (stats) {
+          parts.push(`- ${path} (+${stats.insertions}/-${stats.deletions})`)
+        } else {
+          parts.push(`- ${path}`)
+        }
+      })
+    }
+
+    if (nameStatus.length > 0) {
+      parts.push('Changes (name-status):')
+      nameStatus.slice(0, 12).forEach((entry) => {
+        if (entry.status === 'R' || entry.status === 'C') {
+          const oldPath = entry.oldPath || 'unknown'
+          parts.push(`- ${entry.status} ${oldPath} -> ${entry.path}`)
+        } else {
+          parts.push(`- ${entry.status} ${entry.path}`)
+        }
+      })
+      if (nameStatus.length > 12) {
+        parts.push(`- ... +${nameStatus.length - 12} more`)
+      }
+    }
+
+    if (patchSnippets.length > 0) {
+      parts.push('Top diffs (snippets):')
+      patchSnippets.slice(0, 3).forEach((snippet) => {
+        parts.push(snippet)
+      })
+    } else if (diff.summary) {
+      parts.push('Summary:')
+      parts.push(diff.summary)
+    }
+
+    return parts.join('\n')
+  }
+
+  /**
    * Detects merge information from the diff.
    *
    * @param diff - The processed diff

@@ -105,6 +105,26 @@ export interface CommitMessage {
   body?: string
 }
 
+export interface PullRequestMessage {
+  title: string
+  body: string
+}
+
+export type PullRequestTemplate = 'default' | 'grouped' | 'subtle-bug'
+
+export interface PullRequestHints {
+  type?: string
+  scope?: string
+  platform?: string[]
+  riskLevel?: 'low' | 'med' | 'high'
+  template?: PullRequestTemplate
+  groupings?: string[]
+  testTouched?: boolean
+  uiTouched?: boolean
+  commitSubjects?: string[]
+  behaviorSummary?: string
+}
+
 /**
  * Type for the LogLevel enum.
  */

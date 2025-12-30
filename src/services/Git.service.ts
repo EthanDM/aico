@@ -123,6 +123,192 @@ class GitService {
     return this.git.diff(['--staged'])
   }
 
+  private async refExists(ref: string): Promise<boolean> {
+    try {
+      await this.git.raw(['show-ref', '--verify', '--quiet', ref])
+      return true
+    } catch (error) {
+      return false
+    }
+  }
+
+  private stripRefPrefix(ref: string): string {
+    return ref
+      .replace(/^refs\/remotes\//, '')
+      .replace(/^refs\/heads\//, '')
+  }
+
+  private async getDefaultRemoteBranch(): Promise<string | undefined> {
+    try {
+      const ref = await this.git.raw([
+        'symbolic-ref',
+        '--quiet',
+        'refs/remotes/origin/HEAD',
+      ])
+      const trimmed = ref.trim()
+      return trimmed ? this.stripRefPrefix(trimmed) : undefined
+    } catch (error) {
+      return undefined
+    }
+  }
+
+  /**
+   * Resolves a base branch reference for pull request diffs.
+   */
+  public async getDefaultBaseBranch(): Promise<string> {
+    const remoteHead = await this.getDefaultRemoteBranch()
+    if (remoteHead) {
+      return remoteHead
+    }
+
+    const candidates = [
+      'refs/heads/main',
+      'refs/heads/master',
+      'refs/heads/develop',
+      'refs/remotes/origin/main',
+      'refs/remotes/origin/master',
+      'refs/remotes/origin/develop',
+    ]
+
+    for (const ref of candidates) {
+      if (await this.refExists(ref)) {
+        return this.stripRefPrefix(ref)
+      }
+    }
+
+    return 'main'
+  }
+
+  /**
+   * Gets the diff of the current branch against a base ref.
+   */
+  public async getBranchDiff(baseRef: string): Promise<string> {
+    return this.git.raw(['diff', `${baseRef}...HEAD`])
+  }
+
+  /**
+   * Gets commit subjects between base and head (excluding merges).
+   */
+  public async getCommitSubjectsBetween(
+    baseRef: string,
+    headRef: string = 'HEAD'
+  ): Promise<string[]> {
+    try {
+      const output = await this.git.raw([
+        'log',
+        '--no-merges',
+        '--pretty=%s',
+        `${baseRef}..${headRef}`,
+      ])
+      return output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    } catch (error) {
+      return []
+    }
+  }
+
+  public async getBranchNameStatusRaw(
+    baseRef: string
+  ): Promise<NameStatusEntry[]> {
+    const output = await this.git.raw([
+      'diff',
+      '--name-status',
+      `${baseRef}...HEAD`,
+    ])
+    const lines = output.split('\n').map((line) => line.trim()).filter(Boolean)
+
+    const entries: NameStatusEntry[] = []
+
+    for (const line of lines) {
+      const parts = line.split('\t').filter(Boolean)
+      if (parts.length === 0) continue
+
+      const statusRaw = parts[0]
+      const status = statusRaw[0] as NameStatusCode
+
+      if ((status === 'R' || status === 'C') && parts.length >= 3) {
+        entries.push({
+          status,
+          oldPath: parts[1],
+          path: parts[2],
+        })
+        continue
+      }
+
+      if (parts.length >= 2) {
+        entries.push({
+          status,
+          path: parts[1],
+        })
+        continue
+      }
+
+      const fallback = line.split(/\s+/)
+      if (fallback.length >= 2) {
+        entries.push({
+          status,
+          path: fallback[1],
+        })
+      }
+    }
+
+    return entries
+  }
+
+  public async getBranchNumStatRaw(baseRef: string): Promise<NumStatEntry[]> {
+    const output = await this.git.raw(['diff', '--numstat', `${baseRef}...HEAD`])
+    const lines = output.split('\n').map((line) => line.trim()).filter(Boolean)
+
+    const entries: NumStatEntry[] = []
+
+    for (const line of lines) {
+      const parts = line.split('\t')
+      if (parts.length < 3) continue
+
+      const insertionsRaw = parts[0]
+      const deletionsRaw = parts[1]
+      const pathParts = parts.slice(2)
+
+      const insertions =
+        insertionsRaw === '-' ? 0 : Number.parseInt(insertionsRaw, 10) || 0
+      const deletions =
+        deletionsRaw === '-' ? 0 : Number.parseInt(deletionsRaw, 10) || 0
+
+      if (pathParts.length >= 2) {
+        entries.push({
+          insertions,
+          deletions,
+          oldPath: pathParts[0],
+          path: pathParts[1],
+        })
+        continue
+      }
+
+      const pathValue = pathParts.join('\t')
+      const renameInfo = this.parseRenamePath(pathValue)
+      entries.push({
+        insertions,
+        deletions,
+        path: renameInfo.path,
+        oldPath: renameInfo.oldPath,
+      })
+    }
+
+    return entries
+  }
+
+  public async getBranchPatchForPaths(
+    baseRef: string,
+    paths: string[]
+  ): Promise<string> {
+    if (paths.length === 0) {
+      return ''
+    }
+    return this.git.raw(['diff', `${baseRef}...HEAD`, '--', ...paths])
+  }
+
   public async getStagedNameStatusRaw(): Promise<NameStatusEntry[]> {
     const output = await this.git.raw(['diff', '--cached', '--name-status'])
     const lines = output.split('\n').map((line) => line.trim()).filter(Boolean)
