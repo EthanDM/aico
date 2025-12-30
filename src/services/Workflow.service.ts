@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 import { Config, CommitMessage, ProcessedDiff } from '../types'
-import { createOpenAIService } from './OpenAI.service'
+import { createCommitGenerator } from './CommitGenerator.service'
 import GitService from './Git.service'
 import DiffOrchestrator from './DiffOrchestrator.service'
 import { uiService } from './UI.service'
@@ -18,7 +18,7 @@ interface WorkflowOptions {
  * Service for handling the commit message generation workflow.
  */
 class WorkflowService {
-  private openai
+  private commitGenerator
   private options: WorkflowOptions
   private config: Config
   private providedContext?: string
@@ -38,7 +38,7 @@ class WorkflowService {
       this.options.context = true // Enable context mode
     }
 
-    this.openai = createOpenAIService(config, this.options)
+    this.commitGenerator = createCommitGenerator(config, this.options)
   }
 
   /**
@@ -120,7 +120,7 @@ class WorkflowService {
 
     // Generate the commit message
     AppLogService.generatingCommitMessage()
-    const message = await this.openai.generateCommitMessage(diff, context)
+    const message = await this.commitGenerator.generateCommitMessage(diff, context)
     AppLogService.commitMessageGenerated(message)
 
     return message
@@ -222,7 +222,7 @@ class WorkflowService {
       }
 
       LoggerService.info('\n🌿 Generating branch name...')
-      const branchName = await this.openai.generateBranchName(context, diff)
+      const branchName = await this.commitGenerator.generateBranchName(context, diff)
 
       console.log('\n🎯 Generated branch name:')
       console.log(chalk.green(branchName))
