@@ -223,12 +223,12 @@ class DiffProcessor {
     const topList = topFiles.length > 0
       ? topFiles
       : numStat
-          .slice()
-          .sort(
-            (a, b) => b.insertions + b.deletions - (a.insertions + a.deletions)
-          )
-          .slice(0, 5)
-          .map((entry) => entry.path)
+        .slice()
+        .sort(
+          (a, b) => b.insertions + b.deletions - (a.insertions + a.deletions)
+        )
+        .slice(0, 5)
+        .map((entry) => entry.path)
 
     if (topList.length > 0) {
       if (parts.length > 0) {
@@ -290,20 +290,20 @@ class DiffProcessor {
 
     const statsFromNumstat = mergedSignals.numStat
       ? mergedSignals.numStat.reduce(
-          (acc, entry) => {
-            acc.additions += entry.insertions
-            acc.deletions += entry.deletions
-            return acc
-          },
-          { additions: 0, deletions: 0 }
-        )
+        (acc, entry) => {
+          acc.additions += entry.insertions
+          acc.deletions += entry.deletions
+          return acc
+        },
+        { additions: 0, deletions: 0 }
+      )
       : this.countLineChanges(filteredRawDiff)
 
     const filesChanged = mergedSignals.nameStatus
       ? mergedSignals.nameStatus.filter(
-          (entry) =>
-            !this.isNoisyFile(entry.path) && !this.isBinaryOrMediaFile(entry.path)
-        ).length
+        (entry) =>
+          !this.isNoisyFile(entry.path) && !this.isBinaryOrMediaFile(entry.path)
+      ).length
       : fallbackSignals.nameStatus?.length || 0
 
     const details: GitDiff = {
