@@ -2,6 +2,7 @@ import chalk from 'chalk'
 import { Config, CommitMessage, ProcessedDiff } from '../types'
 import { createOpenAIService } from './OpenAI.service'
 import GitService from './Git.service'
+import DiffOrchestrator from './DiffOrchestrator.service'
 import { uiService } from './UI.service'
 import LoggerService from './Logger.service'
 import AppLogService from './AppLog.service'
@@ -108,7 +109,7 @@ class WorkflowService {
     }
 
     // Get the staged changes after staging is handled
-    const diff = await GitService.getStagedChanges(
+    const diff = await DiffOrchestrator.getStagedChanges(
       this.options.merge,
       this.config.openai.model
     )
@@ -207,7 +208,7 @@ class WorkflowService {
         // If there are staged changes, include them in the context
         const { stagedCount } = await GitService.getChangeCount()
         if (stagedCount > 0) {
-          diff = await GitService.getStagedChanges(
+          diff = await DiffOrchestrator.getStagedChanges(
             false,
             this.config.openai.model
           )
