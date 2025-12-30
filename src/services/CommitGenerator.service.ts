@@ -343,36 +343,42 @@ export class CommitGeneratorService {
       userMessage
     )
 
-    const prompt = await this.promptBuilder.buildPullRequestPrompt(
-      userMessage,
-      diff,
-      baseBranch,
-      {
-        type: prHints.type,
-        scope: prHints.scope,
-        template: prHints.template,
-        platform: prHints.platformHints,
-        riskLevel: prHints.riskLevel,
-        groupings: prHints.groupings,
-        testTouched: prHints.testTouched,
-        uiTouched: prHints.uiTouched,
-        commitSubjects,
-      }
-    )
+    const buildPrompt = async (templateOverride?: PullRequestTemplate) => {
+      return this.promptBuilder.buildPullRequestPrompt(
+        userMessage,
+        diff,
+        baseBranch,
+        {
+          type: prHints.type,
+          scope: prHints.scope,
+          template: templateOverride || prHints.template,
+          platform: prHints.platformHints,
+          riskLevel: prHints.riskLevel,
+          groupings: prHints.groupings,
+          testTouched: prHints.testTouched,
+          uiTouched: prHints.uiTouched,
+          commitSubjects,
+        }
+      )
+    }
+
+    const prompt = await buildPrompt()
 
     const attemptOnce = async (
       template: PullRequestTemplate,
+      promptOverride?: string,
       previousMessage?: PullRequestMessage,
       violations?: string[]
     ): Promise<PullRequestMessage> => {
+      const basePrompt = promptOverride || prompt
       if (previousMessage && violations && violations.length > 0) {
-        const repairPrompt = `${prompt}\n\nPrevious output:\n${previousMessage.title}\n\n${previousMessage.body}\n\nViolations:\n- ${violations.join(
+        const repairPrompt = `${basePrompt}\n\nPrevious output:\n${previousMessage.title}\n\n${previousMessage.body}\n\nViolations:\n- ${violations.join(
           '\n- '
         )}\n\nReturn a corrected title and description that follow the template exactly.`
         return this.openai.generatePullRequestMessage(repairPrompt)
       }
 
-      return this.openai.generatePullRequestMessage(prompt)
+      return this.openai.generatePullRequestMessage(basePrompt)
     }
 
     const first = await attemptOnce(prHints.template)
@@ -385,7 +391,24 @@ export class CommitGeneratorService {
       `PR message failed validation: ${validation.errors.join('; ')}`
     )
 
-    const repaired = await attemptOnce(prHints.template, first, validation.errors)
+    const wantsDefaultTemplate = validation.errors.some((error) =>
+      error.includes('Group heading') || error.includes('Grouped template')
+    )
+    if (wantsDefaultTemplate && prHints.template === 'grouped') {
+      const defaultPrompt = await buildPrompt('default')
+      const fallback = await attemptOnce('default', defaultPrompt)
+      const fallbackValidation = this.prValidator.validate(fallback, 'default')
+      if (fallbackValidation.valid) {
+        return fallback
+      }
+    }
+
+    const repaired = await attemptOnce(
+      prHints.template,
+      undefined,
+      first,
+      validation.errors
+    )
     const secondValidation = this.prValidator.validate(
       repaired,
       prHints.template

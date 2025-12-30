@@ -17,12 +17,33 @@ interface PullRequestHeuristicsResult {
 
 const TYPE_MATCH = /^(fix|feat|refactor|chore|perf|docs)(\(.+\))?:\s+/i
 const DEFAULT_SCOPE = 'core'
+const INFRA_GROUPS = new Set([
+  'services',
+  'service',
+  'constants',
+  'cli',
+  'heuristics',
+  'processors',
+  'prompts',
+  'types',
+  'validation',
+  'tests',
+  'test',
+  'docs',
+  'doc',
+  'readme',
+  'config',
+  'scripts',
+  'dist',
+  'build',
+  'node_modules',
+])
 
 export class PullRequestHeuristics {
   constructor(
     private commitHeuristics: CommitHeuristics,
     private scopeInferrer: ScopeInferrer
-  ) {}
+  ) { }
 
   public infer(
     diff: ProcessedDiff,
@@ -158,7 +179,11 @@ export class PullRequestHeuristics {
       if (parts.length === 0) continue
       const area =
         parts[0] === 'src' && parts.length > 1 ? parts[1] : parts[0]
-      counts.set(area, (counts.get(area) || 0) + 1)
+      const normalized = area.toLowerCase().replace(/[^a-z0-9-]/g, '')
+      if (!normalized || INFRA_GROUPS.has(normalized)) {
+        continue
+      }
+      counts.set(normalized, (counts.get(normalized) || 0) + 1)
     }
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
@@ -173,7 +198,7 @@ export class PullRequestHeuristics {
   ): PullRequestTemplate {
     const linesChanged = diff.stats.additions + diff.stats.deletions
     const isLarge = diff.stats.filesChanged >= 8 || linesChanged >= 200
-    const isGrouped = groupings.length >= 3 && isLarge
+    const isGrouped = groupings.length >= 2 && isLarge
     const isSubtle = /(race|stale|timing|concurr|debounce|throttle)/.test(
       contextText
     )

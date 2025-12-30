@@ -281,6 +281,7 @@ export class PromptBuilder {
       'Title format: <type>(<scope>): <outcome>.',
       'Use the shortest template that preserves clarity.',
       'Use Markdown headings with "###" and bullet lists.',
+      'Group headings must be product/feature areas, not files or code layers.',
     ]
 
     const branchName = await this.git.getBranchName()

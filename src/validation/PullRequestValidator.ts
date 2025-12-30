@@ -7,6 +7,8 @@ interface ValidationResult {
 
 const TITLE_PATTERN = /^(fix|feat|refactor|chore|perf|docs)\([a-z0-9-]+\):\s+\S+/i
 const FILE_PATH_PATTERN = /(src\/|lib\/|packages\/|\.ts\b|\.tsx\b|\.js\b|\.jsx\b|\.json\b|\.md\b)/
+const FILEISH_HEADING_PATTERN = /(\.md\b|readme\b|services?\b|constants?\b|cli\b|heuristics?\b|processors?\b|prompts?\b|types?\b|validation\b|tests?\b|config\b|scripts?\b|dist\b)/i
+const QA_GENERIC_PREFIX = /^(verified|ensured|checked|tested|confirmed)\b/i
 
 export class PullRequestValidator {
   public validate(
@@ -57,6 +59,9 @@ export class PullRequestValidator {
         errors.push('Grouped template needs at least 2 group sections')
       }
       for (const key of groupSections) {
+        if (this.isFileishHeading(key)) {
+          errors.push(`Group heading "${key}" looks like file or infra`)
+        }
         const bullets = this.extractBullets(sections.get(key) || '')
         if (bullets.length === 0) {
           errors.push(`Group "${key}" should include bullets`)
@@ -105,6 +110,9 @@ export class PullRequestValidator {
     if (this.containsFilePaths(qaBullets)) {
       errors.push('QA Focus should not include file paths')
     }
+    if (qaBullets.some((bullet) => QA_GENERIC_PREFIX.test(bullet))) {
+      errors.push('QA Focus bullets should be executable, not generic')
+    }
 
     return { valid: errors.length === 0, errors }
   }
@@ -147,5 +155,9 @@ export class PullRequestValidator {
 
   private containsFilePaths(lines: string[]): boolean {
     return lines.some((line) => FILE_PATH_PATTERN.test(line))
+  }
+
+  private isFileishHeading(heading: string): boolean {
+    return FILEISH_HEADING_PATTERN.test(heading)
   }
 }
